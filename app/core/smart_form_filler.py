@@ -1,12 +1,25 @@
 """
 智能表单填充器 - 自愈机制 + 数据转换
-参考：UiPath、Automation Anywhere的Self-healing
+
+参考：UiPath、Automation Anywhere 的 Self-healing
+
+重构说明:
+- Element UI 专用方法已提取到 app.core.filler.element_ui_adapter
+- 本模块保留核心填充逻辑和自愈机制
 """
 import time
+from typing import Any, Dict, Optional, Callable
+
 from app.core.smart_form_analyzer import SmartFormAnalyzer
+from app.core.filler.element_ui_adapter import ElementUIAdapter
+
 
 class SmartFormFiller:
     """智能表单填充器（带自愈能力）"""
+    
+    # Element UI 适配器代理方法
+    fill_element_ui_input = staticmethod(ElementUIAdapter.fill_by_placeholder)
+    fill_element_ui_by_label = staticmethod(ElementUIAdapter.fill_by_label)
     
     @staticmethod
     def _wait_for_loading_complete(tab, timeout=5):
@@ -640,225 +653,4 @@ class SmartFormFiller:
                 pass
         
         return False
-
-    # ===== 政府级 Vue.js + Element UI 专用方法 =====
-    
-    @staticmethod
-    def fill_element_ui_input(tab, placeholder_text, value, ensure_iframe=True):
-        """
-        Element UI 专用填充方法（Vue 双向绑定兼容）
-        
-        针对 https://tps.xjylbz.cn 等政府级 Vue SPA 应用优化。
-        
-        功能:
-        1. 自动切换到 iframe（如果需要）
-        2. 使用 XPath 通过 placeholder 定位 Element UI 输入框
-        3. 使用 JS 注入设置值并触发 Vue 事件链
-        
-        Args:
-            tab: DrissionPage 的 tab 对象
-            placeholder_text: 输入框的 placeholder 文本
-            value: 要填充的值
-            ensure_iframe: 是否确保切换到 iframe（默认 True）
-            
-        Returns:
-            bool: 是否成功
-        """
-        try:
-            # ===== 步骤1: 切换到 iframe =====
-            if ensure_iframe:
-                try:
-                    # 检测并切换到第一个 iframe
-                    js_check_iframe = """
-                    (function() {
-                        const iframes = document.querySelectorAll('iframe');
-                        if (iframes.length > 0) {
-                            return { has_iframe: true, count: iframes.length };
-                        }
-                        return { has_iframe: false };
-                    })();
-                    """
-                    iframe_info = tab.run_js(js_check_iframe)
-                    
-                    if iframe_info and iframe_info.get('has_iframe'):
-                        tab.to_frame(0)  # 切换到第一个 iframe
-                        print(f"   🔄 已切换到 iframe")
-                except Exception as e:
-                    print(f"   ⚠️ iframe 切换失败或不需要: {e}")
-            
-            # ===== 步骤2: 使用 placeholder XPath 定位并填充 =====
-            # 转义特殊字符
-            placeholder_escaped = placeholder_text.replace("'", "\\'").replace('"', '\\"')
-            value_escaped = str(value).replace('\\', '\\\\').replace("'", "\\'").replace('"', '\\"').replace('\n', '\\n')
-            
-            js_fill_element_ui = f"""
-            (function() {{
-                // ===== 1. 通过 placeholder 定位 Element UI 输入框 =====
-                let el = null;
-                
-                // 方法1: XPath by placeholder
-                try {{
-                    const result = document.evaluate(
-                        "//input[@placeholder='{placeholder_escaped}']",
-                        document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
-                    );
-                    el = result.singleNodeValue;
-                }} catch(e) {{}}
-                
-                // 方法2: CSS 选择器 (Element UI 专用)
-                if (!el) {{
-                    el = document.querySelector('input.el-input__inner[placeholder="{placeholder_escaped}"]');
-                }}
-                
-                // 方法3: 模糊匹配 placeholder
-                if (!el) {{
-                    const inputs = document.querySelectorAll('input.el-input__inner, input');
-                    for (let inp of inputs) {{
-                        if (inp.placeholder && inp.placeholder.includes('{placeholder_escaped}')) {{
-                            el = inp;
-                            break;
-                        }}
-                    }}
-                }}
-                
-                if (!el) {{
-                    return {{ success: false, error: 'element_not_found', placeholder: '{placeholder_escaped}' }};
-                }}
-                
-                // ===== 2. 设置值（Vue 双向绑定兼容）=====
-                try {{
-                    // 聚焦
-                    el.focus();
-                    
-                    // 清空并设置值
-                    el.value = '';
-                    el.value = '{value_escaped}';
-                    
-                    // ===== 3. 触发 Vue 事件链 =====
-                    // input 事件（Vue v-model 监听）
-                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    
-                    // change 事件（表单验证）
-                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                    
-                    // blur 事件（失焦触发校验）
-                    el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
-                    el.blur();
-                    
-                    return {{ 
-                        success: true, 
-                        value: el.value,
-                        placeholder: el.placeholder
-                    }};
-                    
-                }} catch (e) {{
-                    return {{ success: false, error: e.toString() }};
-                }}
-            }})();
-            """
-            
-            result = tab.run_js(js_fill_element_ui)
-            
-            if result and isinstance(result, dict):
-                if result.get('success'):
-                    print(f"   ✅ [{placeholder_text}] = {value}")
-                    return True
-                else:
-                    print(f"   ❌ 填充失败: {result.get('error')}")
-                    return False
-            
-            return False
-            
-        except Exception as e:
-            print(f"   ❌ fill_element_ui_input 异常: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-        
-        finally:
-            # 切回主框架
-            if ensure_iframe:
-                try:
-                    tab.to_main()
-                except:
-                    pass
-    
-    @staticmethod
-    def fill_element_ui_by_label(tab, label_text, value, ensure_iframe=True):
-        """
-        通过 Element UI 表单标签文本填充（el-form-item__label）
-        
-        Args:
-            tab: DrissionPage 的 tab 对象
-            label_text: 标签文本（如 "身份证号"、"姓名"）
-            value: 要填充的值
-            ensure_iframe: 是否确保切换到 iframe
-            
-        Returns:
-            bool: 是否成功
-        """
-        try:
-            if ensure_iframe:
-                try:
-                    tab.to_frame(0)
-                except:
-                    pass
-            
-            label_escaped = label_text.replace("'", "\\'")
-            value_escaped = str(value).replace('\\', '\\\\').replace("'", "\\'").replace('"', '\\"')
-            
-            js_fill_by_label = f"""
-            (function() {{
-                // 查找包含指定文本的 Element UI 标签
-                const labels = document.querySelectorAll('.el-form-item__label');
-                let targetInput = null;
-                
-                for (let label of labels) {{
-                    const text = label.textContent.trim().replace(/[：:*]/g, '');
-                    if (text === '{label_escaped}' || text.includes('{label_escaped}')) {{
-                        // 找到标签，在同一个 form-item 容器内找输入框
-                        const formItem = label.closest('.el-form-item');
-                        if (formItem) {{
-                            targetInput = formItem.querySelector('input.el-input__inner, textarea.el-textarea__inner, input');
-                            if (targetInput) break;
-                        }}
-                    }}
-                }}
-                
-                if (!targetInput) {{
-                    return {{ success: false, error: 'label_not_found', label: '{label_escaped}' }};
-                }}
-                
-                // 设置值并触发 Vue 事件
-                targetInput.focus();
-                targetInput.value = '';
-                targetInput.value = '{value_escaped}';
-                targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                targetInput.dispatchEvent(new Event('blur', {{ bubbles: true }}));
-                targetInput.blur();
-                
-                return {{ success: true, value: targetInput.value }};
-            }})();
-            """
-            
-            result = tab.run_js(js_fill_by_label)
-            
-            if result and result.get('success'):
-                print(f"   ✅ [标签:{label_text}] = {value}")
-                return True
-            else:
-                print(f"   ❌ 标签 '{label_text}' 填充失败: {result}")
-                return False
-                
-        except Exception as e:
-            print(f"   ❌ fill_element_ui_by_label 异常: {e}")
-            return False
-            
-        finally:
-            if ensure_iframe:
-                try:
-                    tab.to_main()
-                except:
-                    pass
 
