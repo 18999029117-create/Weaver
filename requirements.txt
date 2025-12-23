@@ -1,0 +1,18 @@
+# Weaver (维沃) - 依赖清单
+# 版本锁定以确保环境一致性
+
+# UI 框架
+customtkinter>=5.2.0
+
+# 浏览器自动化
+DrissionPage>=4.0.0
+
+# 数据处理
+pandas>=2.0.0
+openpyxl>=3.1.0
+
+# 系统工具
+psutil>=5.9.0
+
+# 图像处理（截图功能）
+Pillow>=10.0.0

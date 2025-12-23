@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autocomplete 动态联想输入测试靶场</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Microsoft YaHei", Arial, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+            padding: 40px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #718096;
+            margin-bottom: 32px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 14px;
+            color: #4a5568;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #4299e1;
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.15);
+        }
+
+        /* Autocomplete 容器 */
+        .autocomplete-wrapper {
+            position: relative;
+        }
+
+        /* Autocomplete 下拉框 */
+        .dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            max-height: 240px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+
+        .dropdown.show {
+            display: block;
+        }
+
+        .dropdown-item {
+            padding: 10px 12px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #4a5568;
+            border-bottom: 1px solid #f0f0f0;
+            transition: background 0.15s;
+        }
+
+        .dropdown-item:last-child {
+            border-bottom: none;
+        }
+
+        .dropdown-item:hover {
+            background: #f7fafc;
+        }
+
+        .dropdown-item.selected {
+            background: #ebf8ff;
+            color: #2b6cb0;
+        }
+
+        .dropdown-item .match {
+            font-weight: 600;
+            color: #2b6cb0;
+        }
+
+        .dropdown-empty {
+            padding: 16px;
+            text-align: center;
+            color: #a0aec0;
+            font-size: 13px;
+        }
+
+        /* 不同类型的 Autocomplete */
+        .autocomplete-multi .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: #e2e8f0;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin: 2px;
+        }
+
+        .autocomplete-multi .tag-remove {
+            cursor: pointer;
+            color: #718096;
+            font-weight: bold;
+        }
+
+        .autocomplete-multi .tag-remove:hover {
+            color: #e53e3e;
+        }
+
+        /* 带分组的下拉框 */
+        .dropdown-group {
+            padding: 8px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #a0aec0;
+            text-transform: uppercase;
+            background: #f7fafc;
+        }
+
+        /* 加载状态 */
+        .dropdown-loading {
+            padding: 16px;
+            text-align: center;
+            color: #718096;
+        }
+
+        .dropdown-loading::after {
+            content: '';
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #e2e8f0;
+            border-top-color: #4299e1;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* 状态提示 */
+        .status {
+            padding: 12px;
+            background: #f0fff4;
+            border: 1px solid #9ae6b4;
+            border-radius: 6px;
+            color: #276749;
+            font-size: 13px;
+            margin-top: 12px;
+        }
+
+        .status.error {
+            background: #fff5f5;
+            border-color: #feb2b2;
+            color: #c53030;
+        }
+
+        /* 测试说明 */
+        .test-info {
+            background: #fffaf0;
+            border: 1px solid #fbd38d;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+
+        .test-info h3 {
+            color: #c05621;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .test-info ul {
+            margin-left: 20px;
+            color: #744210;
+            font-size: 13px;
+            line-height: 1.8;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔍 Autocomplete 动态联想输入测试靶场</h1>
+        <p class="subtitle">测试 Smart Analyzer 对动态弹出下拉框的实时检测能力</p>
+
+        <div class="test-info">
+            <h3>📋 测试场景说明</h3>
+            <ul>
+                <li><strong>场景1</strong>：基础 Autocomplete（输入触发，本地数据）</li>
+                <li><strong>场景2</strong>：延迟加载 Autocomplete（模拟 API 请求，500ms 延迟）</li>
+                <li><strong>场景3</strong>：分组 Autocomplete（带分类标题）</li>
+                <li><strong>场景4</strong>：多选 Autocomplete（可选多个标签）</li>
+            </ul>
+        </div>
+
+        <!-- 场景1: 基础 Autocomplete -->
+        <div class="card">
+            <div class="card-title">🏷️ 场景1：基础物资名称联想</div>
+            <div class="form-group">
+                <label class="form-label">物资名称</label>
+                <div class="autocomplete-wrapper">
+                    <input type="text" class="form-input" id="material_name" placeholder="输入物资名称，如：骨水泥、导管、缝合线..."
+                        autocomplete="off">
+                    <div class="dropdown" id="material_dropdown"></div>
+                </div>
+                <div class="status" id="material_status" style="display:none;"></div>
+            </div>
+        </div>
+
+        <!-- 场景2: 延迟加载 -->
+        <div class="card">
+            <div class="card-title">⏳ 场景2：延迟加载供应商（模拟 API）</div>
+            <div class="form-group">
+                <label class="form-label">供应商名称</label>
+                <div class="autocomplete-wrapper">
+                    <input type="text" class="form-input" id="supplier_name" placeholder="输入供应商名称..."
+                        autocomplete="off">
+                    <div class="dropdown" id="supplier_dropdown"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 场景3: 分组 Autocomplete -->
+        <div class="card">
+            <div class="card-title">📂 场景3：分组科室选择</div>
+            <div class="form-group">
+                <label class="form-label">使用科室</label>
+                <div class="autocomplete-wrapper">
+                    <input type="text" class="form-input" id="department_name" placeholder="输入科室名称..."
+                        autocomplete="off">
+                    <div class="dropdown" id="department_dropdown"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 场景4: 多选 -->
+        <div class="card">
+            <div class="card-title">🏷️ 场景4：多选标签（适用症）</div>
+            <div class="form-group">
+                <label class="form-label">适用症</label>
+                <div class="autocomplete-wrapper autocomplete-multi">
+                    <div id="disease_tags" style="margin-bottom:8px;"></div>
+                    <input type="text" class="form-input" id="disease_name" placeholder="搜索并选择适用症..."
+                        autocomplete="off">
+                    <div class="dropdown" id="disease_dropdown"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===== 数据源 =====
+        const materials = [
+            { id: 1, name: '骨水泥 40g', spec: '强生', code: 'GN-001' },
+            { id: 2, name: '骨水泥 60g', spec: '史赛克', code: 'GN-002' },
+            { id: 3, name: '人工髋关节', spec: 'Zimmer', code: 'GK-001' },
+            { id: 4, name: '人工膝关节', spec: '强生', code: 'GK-002' },
+            { id: 5, name: '心脏支架', spec: '美敦力', code: 'XZ-001' },
+            { id: 6, name: '导尿管 18Fr', spec: '威高', code: 'DG-001' },
+            { id: 7, name: '导尿管 20Fr', spec: '威高', code: 'DG-002' },
+            { id: 8, name: '缝合线 3-0', spec: '爱惜康', code: 'FX-001' },
+            { id: 9, name: '缝合线 4-0', spec: '爱惜康', code: 'FX-002' },
+            { id: 10, name: '止血纱布', spec: '强生', code: 'ZX-001' }
+        ];
+
+        const suppliers = [
+            '强生医疗器械有限公司',
+            '史赛克医疗器材(上海)有限公司',
+            '美敦力医疗科技有限公司',
+            '威高集团有限公司',
+            '爱惜康医疗器械有限公司',
+            'Zimmer Biomet中国',
+            '雅培医疗器械贸易有限公司',
+            '波士顿科学医疗器械有限公司'
+        ];
+
+        const departments = {
+            '外科系统': ['骨科', '神经外科', '心胸外科', '泌尿外科', '普外科'],
+            '内科系统': ['心内科', '呼吸内科', '消化内科', '神经内科', '肾内科'],
+            '医技科室': ['检验科', '影像科', '病理科', '药剂科']
+        };
+
+        const diseases = [
+            '股骨颈骨折', '髋关节置换', '膝关节置换', '心肌梗死',
+            '冠心病', '尿路感染', '前列腺增生', '腹股沟疝',
+            '胆囊结石', '阑尾炎', '腰椎间盘突出', '颈椎病'
+        ];
+
+        let selectedDiseases = [];
+
+        // ===== 场景1: 基础 Autocomplete =====
+        const materialInput = document.getElementById('material_name');
+        const materialDropdown = document.getElementById('material_dropdown');
+        const materialStatus = document.getElementById('material_status');
+
+        materialInput.addEventListener('input', function () {
+            const query = this.value.trim().toLowerCase();
+            if (query.length < 1) {
+                materialDropdown.classList.remove('show');
+                return;
+            }
+
+            const filtered = materials.filter(m =>
+                m.name.toLowerCase().includes(query) ||
+                m.code.toLowerCase().includes(query)
+            );
+
+            if (filtered.length === 0) {
+                materialDropdown.innerHTML = '<div class="dropdown-empty">未找到匹配的物资</div>';
+            } else {
+                materialDropdown.innerHTML = filtered.map(m => `
+                    <div class="dropdown-item" data-id="${m.id}" data-name="${m.name}">
+                        <div>${highlightMatch(m.name, query)} <span style="color:#a0aec0;font-size:12px;">${m.code}</span></div>
+                        <div style="font-size:12px;color:#718096;">规格: ${m.spec}</div>
+                    </div>
+                `).join('');
+            }
+
+            materialDropdown.classList.add('show');
+        });
+
+        materialDropdown.addEventListener('click', function (e) {
+            const item = e.target.closest('.dropdown-item');
+            if (item) {
+                materialInput.value = item.dataset.name;
+                materialDropdown.classList.remove('show');
+                materialStatus.textContent = `✅ 已选择: ${item.dataset.name} (ID: ${item.dataset.id})`;
+                materialStatus.style.display = 'block';
+                materialStatus.className = 'status';
+            }
+        });
+
+        // ===== 场景2: 延迟加载 =====
+        const supplierInput = document.getElementById('supplier_name');
+        const supplierDropdown = document.getElementById('supplier_dropdown');
+        let supplierTimer = null;
+
+        supplierInput.addEventListener('input', function () {
+            const query = this.value.trim().toLowerCase();
+            if (query.length < 1) {
+                supplierDropdown.classList.remove('show');
+                return;
+            }
+
+            // 显示加载状态
+            supplierDropdown.innerHTML = '<div class="dropdown-loading">正在搜索供应商</div>';
+            supplierDropdown.classList.add('show');
+
+            // 模拟 API 延迟
+            clearTimeout(supplierTimer);
+            supplierTimer = setTimeout(() => {
+                const filtered = suppliers.filter(s => s.toLowerCase().includes(query));
+                if (filtered.length === 0) {
+                    supplierDropdown.innerHTML = '<div class="dropdown-empty">未找到匹配的供应商</div>';
+                } else {
+                    supplierDropdown.innerHTML = filtered.map(s => `
+                        <div class="dropdown-item" data-value="${s}">${highlightMatch(s, query)}</div>
+                    `).join('');
+                }
+            }, 500);
+        });
+
+        supplierDropdown.addEventListener('click', function (e) {
+            const item = e.target.closest('.dropdown-item');
+            if (item) {
+                supplierInput.value = item.dataset.value;
+                supplierDropdown.classList.remove('show');
+            }
+        });
+
+        // ===== 场景3: 分组 =====
+        const deptInput = document.getElementById('department_name');
+        const deptDropdown = document.getElementById('department_dropdown');
+
+        deptInput.addEventListener('input', function () {
+            const query = this.value.trim().toLowerCase();
+            if (query.length < 1) {
+                deptDropdown.classList.remove('show');
+                return;
+            }
+
+            let html = '';
+            for (const [group, items] of Object.entries(departments)) {
+                const filtered = items.filter(d => d.toLowerCase().includes(query));
+                if (filtered.length > 0) {
+                    html += `<div class="dropdown-group">${group}</div>`;
+                    html += filtered.map(d => `
+                        <div class="dropdown-item" data-value="${d}">${highlightMatch(d, query)}</div>
+                    `).join('');
+                }
+            }
+
+            if (!html) {
+                html = '<div class="dropdown-empty">未找到匹配的科室</div>';
+            }
+
+            deptDropdown.innerHTML = html;
+            deptDropdown.classList.add('show');
+        });
+
+        deptDropdown.addEventListener('click', function (e) {
+            const item = e.target.closest('.dropdown-item');
+            if (item) {
+                deptInput.value = item.dataset.value;
+                deptDropdown.classList.remove('show');
+            }
+        });
+
+        // ===== 场景4: 多选 =====
+        const diseaseInput = document.getElementById('disease_name');
+        const diseaseDropdown = document.getElementById('disease_dropdown');
+        const diseaseTags = document.getElementById('disease_tags');
+
+        diseaseInput.addEventListener('input', function () {
+            const query = this.value.trim().toLowerCase();
+            if (query.length < 1) {
+                diseaseDropdown.classList.remove('show');
+                return;
+            }
+
+            const filtered = diseases.filter(d =>
+                d.toLowerCase().includes(query) && !selectedDiseases.includes(d)
+            );
+
+            if (filtered.length === 0) {
+                diseaseDropdown.innerHTML = '<div class="dropdown-empty">无更多可选项</div>';
+            } else {
+                diseaseDropdown.innerHTML = filtered.map(d => `
+                    <div class="dropdown-item" data-value="${d}">${highlightMatch(d, query)}</div>
+                `).join('');
+            }
+
+            diseaseDropdown.classList.add('show');
+        });
+
+        diseaseDropdown.addEventListener('click', function (e) {
+            const item = e.target.closest('.dropdown-item');
+            if (item) {
+                const value = item.dataset.value;
+                selectedDiseases.push(value);
+                renderDiseaseTags();
+                diseaseInput.value = '';
+                diseaseDropdown.classList.remove('show');
+            }
+        });
+
+        function renderDiseaseTags() {
+            diseaseTags.innerHTML = selectedDiseases.map(d => `
+                <span class="tag">${d}<span class="tag-remove" data-value="${d}">×</span></span>
+            `).join('');
+        }
+
+        diseaseTags.addEventListener('click', function (e) {
+            if (e.target.classList.contains('tag-remove')) {
+                const value = e.target.dataset.value;
+                selectedDiseases = selectedDiseases.filter(d => d !== value);
+                renderDiseaseTags();
+            }
+        });
+
+        // ===== 辅助函数 =====
+        function highlightMatch(text, query) {
+            if (!query) return text;
+            const regex = new RegExp(`(${query})`, 'gi');
+            return text.replace(regex, '<span class="match">$1</span>');
+        }
+
+        // 点击外部关闭下拉框
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('.autocomplete-wrapper')) {
+                document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('show'));
+            }
+        });
+    </script>
+</body>
+
+</html>

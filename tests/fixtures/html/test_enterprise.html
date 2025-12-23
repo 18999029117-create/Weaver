@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>企业级综合办公平台 - 高耗材管理系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Microsoft YaHei", Arial, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+
+        /* 顶部导航 */
+        .header {
+            background: linear-gradient(135deg, #1a365d 0%, #2c5282 100%);
+            color: white;
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .header .user-info {
+            font-size: 13px;
+            opacity: 0.9;
+        }
+
+        /* 主布局 */
+        .main-container {
+            display: flex;
+            min-height: calc(100vh - 52px);
+        }
+
+        /* 侧边栏 */
+        .sidebar {
+            width: 200px;
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 16px 0;
+        }
+
+        .sidebar-item {
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 14px;
+            border-left: 3px solid transparent;
+        }
+
+        .sidebar-item:hover {
+            background: #4a5568;
+        }
+
+        .sidebar-item.active {
+            background: #4a5568;
+            border-left-color: #4299e1;
+            color: #90cdf4;
+        }
+
+        /* 内容区 */
+        .content {
+            flex: 1;
+            padding: 24px;
+        }
+
+        /* 卡片 */
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #e2e8f0;
+            font-weight: 600;
+            font-size: 15px;
+            color: #2d3748;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-body {
+            padding: 20px;
+        }
+
+        /* 表单 */
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .form-group.half-width {
+            grid-column: span 2;
+        }
+
+        .form-label {
+            font-size: 13px;
+            color: #4a5568;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .form-label .required {
+            color: #e53e3e;
+            margin-left: 2px;
+        }
+
+        .form-input,
+        .form-select,
+        .form-textarea {
+            padding: 8px 12px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .form-input:focus,
+        .form-select:focus,
+        .form-textarea:focus {
+            outline: none;
+            border-color: #4299e1;
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.15);
+        }
+
+        .form-input:disabled {
+            background: #edf2f7;
+            cursor: not-allowed;
+        }
+
+        .form-textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        /* 表格 */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .data-table thead {
+            background: #f7fafc;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .data-table th {
+            font-weight: 600;
+            color: #4a5568;
+            position: sticky;
+            top: 0;
+            background: #f7fafc;
+            z-index: 10;
+        }
+
+        .data-table tbody tr:hover {
+            background: #f7fafc;
+        }
+
+        .data-table .input-cell input {
+            width: 100%;
+            border: 1px solid #e2e8f0;
+            padding: 6px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+
+        .data-table .input-cell input:focus {
+            border-color: #4299e1;
+            outline: none;
+        }
+
+        /* 按钮 */
+        .btn {
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: #4299e1;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #3182ce;
+        }
+
+        .btn-secondary {
+            background: #edf2f7;
+            color: #4a5568;
+        }
+
+        .btn-secondary:hover {
+            background: #e2e8f0;
+        }
+
+        .btn-danger {
+            background: #fc8181;
+            color: white;
+        }
+
+        .btn-sm {
+            padding: 4px 10px;
+            font-size: 12px;
+        }
+
+        /* 标签页 */
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #e2e8f0;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 12px 20px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #718096;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: #4a5568;
+        }
+
+        .tab.active {
+            color: #4299e1;
+            border-bottom-color: #4299e1;
+            font-weight: 500;
+        }
+
+        /* 分组标题 */
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #2d3748;
+            margin: 24px 0 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .section-title:first-child {
+            margin-top: 0;
+        }
+
+        /* 复选框组 */
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #4a5568;
+        }
+
+        .checkbox-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* 单选框组 */
+        .radio-group {
+            display: flex;
+            gap: 20px;
+        }
+
+        .radio-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #4a5568;
+        }
+
+        .radio-item input[type="radio"] {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* 状态标签 */
+        .status-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .status-tag.pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-tag.approved {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-tag.rejected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        /* 加载遮罩 */
+        .loading-mask {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e2e8f0;
+            border-top-color: #4299e1;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* 审批流程 */
+        .approval-flow {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            background: #f7fafc;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .approval-step {
+            text-align: center;
+        }
+
+        .approval-step .step-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            margin: 0 auto 6px;
+        }
+
+        .approval-step .step-icon.done {
+            background: #48bb78;
+            color: white;
+        }
+
+        .approval-step .step-icon.current {
+            background: #4299e1;
+            color: white;
+        }
+
+        .approval-step .step-icon.waiting {
+            background: #e2e8f0;
+            color: #a0aec0;
+        }
+
+        .approval-step .step-label {
+            font-size: 11px;
+            color: #718096;
+        }
+
+        .approval-arrow {
+            color: #cbd5e0;
+            font-size: 20px;
+        }
+
+        /* 滚动表格容器 */
+        .table-scroll {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+        }
+
+        /* 文件上传 */
+        .file-upload {
+            border: 2px dashed #cbd5e0;
+            border-radius: 6px;
+            padding: 24px;
+            text-align: center;
+            color: #718096;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .file-upload:hover {
+            border-color: #4299e1;
+            color: #4299e1;
+        }
+
+        /* Shadow DOM 宿主 */
+        #inner-system-widget {
+            padding: 16px;
+            background: #fafafa;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 加载遮罩 (3秒后隐藏) -->
+    <div class="loading-mask" id="loading-mask">
+        <div class="spinner"></div>
+        <p style="margin-top: 16px; color: #4a5568; font-size: 14px;">正在加载系统数据，请稍候...</p>
+    </div>
+
+    <!-- 顶部导航 -->
+    <header class="header">
+        <h1>🏥 智慧医院高值耗材管理平台</h1>
+        <div class="user-info">当前用户：张三 (骨科主任) | 最后登录：2024-01-15 09:30</div>
+    </header>
+
+    <div class="main-container">
+        <!-- 侧边栏 -->
+        <nav class="sidebar">
+            <div class="sidebar-item">📊 工作台</div>
+            <div class="sidebar-item active">📝 耗材申领</div>
+            <div class="sidebar-item">📦 库存查询</div>
+            <div class="sidebar-item">✅ 审批管理</div>
+            <div class="sidebar-item">📈 统计报表</div>
+            <div class="sidebar-item">⚙️ 系统设置</div>
+        </nav>
+
+        <!-- 主内容 -->
+        <main class="content" id="main-content">
+            <!-- 标签页 -->
+            <div class="tabs">
+                <div class="tab active">新建申领单</div>
+                <div class="tab">待审批 <span style="color:#e53e3e">(3)</span></div>
+                <div class="tab">历史记录</div>
+            </div>
+
+            <!-- 审批流程 -->
+            <div class="approval-flow">
+                <div class="approval-step">
+                    <div class="step-icon done">✓</div>
+                    <div class="step-label">科室申请</div>
+                </div>
+                <span class="approval-arrow">→</span>
+                <div class="approval-step">
+                    <div class="step-icon current">2</div>
+                    <div class="step-label">科主任审批</div>
+                </div>
+                <span class="approval-arrow">→</span>
+                <div class="approval-step">
+                    <div class="step-icon waiting">3</div>
+                    <div class="step-label">设备科审批</div>
+                </div>
+                <span class="approval-arrow">→</span>
+                <div class="approval-step">
+                    <div class="step-icon waiting">4</div>
+                    <div class="step-label">财务审核</div>
+                </div>
+            </div>
+
+            <!-- 基本信息卡片 -->
+            <div class="card">
+                <div class="card-header">
+                    <span>📋 基本信息</span>
+                    <span class="status-tag pending">待提交</span>
+                </div>
+                <div class="card-body">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">申领单号</label>
+                            <input type="text" class="form-input" value="SL2024011500001" disabled>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">申领日期<span class="required">*</span></label>
+                            <input type="date" class="form-input" id="apply_date" value="2024-01-15">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">申领科室<span class="required">*</span></label>
+                            <select class="form-select" id="department">
+                                <option value="">请选择科室</option>
+                                <option value="bone" selected>骨科</option>
+                                <option value="heart">心内科</option>
+                                <option value="brain">神经外科</option>
+                                <option value="eye">眼科</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">申领人<span class="required">*</span></label>
+                            <input type="text" class="form-input" id="applicant" value="张三">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">联系电话</label>
+                            <input type="tel" class="form-input" id="phone" placeholder="请输入联系电话">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">预计使用日期</label>
+                            <input type="date" class="form-input" id="use_date">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">紧急程度</label>
+                            <select class="form-select" id="urgency">
+                                <option value="normal">普通</option>
+                                <option value="urgent">紧急</option>
+                                <option value="very_urgent">特急</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">费用类型</label>
+                            <select class="form-select" id="cost_type">
+                                <option value="medical">医保</option>
+                                <option value="self">自费</option>
+                                <option value="commercial">商保</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 患者信息卡片 -->
+            <div class="card">
+                <div class="card-header">👤 患者信息</div>
+                <div class="card-body">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">住院号<span class="required">*</span></label>
+                            <input type="text" class="form-input" id="patient_id" placeholder="请输入住院号">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">患者姓名<span class="required">*</span></label>
+                            <input type="text" class="form-input" id="patient_name" placeholder="请输入患者姓名">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">性别</label>
+                            <div class="radio-group" style="height:36px;align-items:center;">
+                                <label class="radio-item"><input type="radio" name="gender" value="male" checked>
+                                    男</label>
+                                <label class="radio-item"><input type="radio" name="gender" value="female"> 女</label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">年龄</label>
+                            <input type="number" class="form-input" id="patient_age" placeholder="岁" min="0" max="150">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">床号</label>
+                            <input type="text" class="form-input" id="bed_no" placeholder="如: 12床">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">诊断</label>
+                            <input type="text" class="form-input" id="diagnosis" placeholder="请输入诊断信息">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">主治医生</label>
+                            <input type="text" class="form-input" id="doctor" placeholder="请输入主治医生">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">手术日期</label>
+                            <input type="date" class="form-input" id="surgery_date">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 耗材明细卡片 -->
+            <div class="card">
+                <div class="card-header">
+                    <span>📦 耗材明细</span>
+                    <button class="btn btn-primary btn-sm" id="add_item_btn">+ 添加耗材</button>
+                </div>
+                <div class="card-body">
+                    <div class="table-scroll">
+                        <table class="data-table" id="items_table">
+                            <thead>
+                                <tr>
+                                    <th style="width:40px">#</th>
+                                    <th style="width:140px">耗材条码</th>
+                                    <th style="width:200px">耗材名称</th>
+                                    <th style="width:100px">规格型号</th>
+                                    <th style="width:80px">生产厂家</th>
+                                    <th style="width:80px">单价(元)</th>
+                                    <th style="width:60px">数量</th>
+                                    <th style="width:80px">小计(元)</th>
+                                    <th style="width:60px">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="items_body">
+                                <!-- 动态生成10行 -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top:16px;display:flex;justify-content:flex-end;gap:24px;font-size:14px;">
+                        <span>合计数量: <strong id="total_qty">0</strong> 件</span>
+                        <span>合计金额: <strong id="total_amount" style="color:#e53e3e;">¥0.00</strong></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 附加信息卡片 -->
+            <div class="card">
+                <div class="card-header">📎 附加信息</div>
+                <div class="card-body">
+                    <div class="section-title">使用说明</div>
+                    <div class="form-group full-width">
+                        <label class="form-label">备注说明</label>
+                        <textarea class="form-textarea" id="remarks" placeholder="请输入备注说明..."></textarea>
+                    </div>
+
+                    <div class="section-title">附件上传</div>
+                    <div class="file-upload" id="file_upload">
+                        <p>📤 点击或拖拽文件到此处上传</p>
+                        <p style="font-size:12px;margin-top:8px;">支持 PDF、图片格式，单个文件不超过10MB</p>
+                    </div>
+
+                    <div class="section-title">确认选项</div>
+                    <div class="checkbox-group">
+                        <label class="checkbox-item"><input type="checkbox" id="confirm_info"> 确认以上信息准确无误</label>
+                        <label class="checkbox-item"><input type="checkbox" id="confirm_policy">
+                            已阅读并同意《高值耗材管理规定》</label>
+                        <label class="checkbox-item"><input type="checkbox" id="confirm_urgent"> 标记为紧急申领</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 第三方系统嵌入 (Shadow DOM) -->
+            <div class="card">
+                <div class="card-header">🔗 第三方系统接口 (物资追溯)</div>
+                <div class="card-body">
+                    <div id="inner-system-widget">
+                        <!-- Shadow DOM 将在此注入 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 提交按钮 -->
+            <div style="display:flex;justify-content:center;gap:16px;margin-top:24px;">
+                <button class="btn btn-secondary">保存草稿</button>
+                <button class="btn btn-primary" style="min-width:120px;">提交审批</button>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // 模拟3秒加载
+        setTimeout(() => {
+            document.getElementById('loading-mask').classList.add('hidden');
+        }, 3000);
+
+        // 生成10行耗材明细
+        const itemsBody = document.getElementById('items_body');
+        const materials = [
+            { name: '人工髋关节假体', spec: 'Ⅲ型/左', factory: '强生', price: 45000 },
+            { name: '骨水泥', spec: '40g/袋', factory: '史赛克', price: 2800 },
+            { name: '引流管', spec: '24Fr', factory: '威高', price: 180 },
+            { name: '止血纱布', spec: '10×10cm', factory: '强生', price: 350 },
+            { name: '缝合线', spec: '3-0/可吸收', factory: '爱惜康', price: 120 }
+        ];
+
+        for (let i = 1; i <= 10; i++) {
+            const mat = materials[i % materials.length];
+            const qty = Math.floor(Math.random() * 3) + 1;
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${i}</td>
+                <td class="input-cell"><input type="text" placeholder="扫描条码..." data-field="barcode"></td>
+                <td class="input-cell"><input type="text" value="${i <= 5 ? mat.name : ''}" data-field="name"></td>
+                <td class="input-cell"><input type="text" value="${i <= 5 ? mat.spec : ''}" data-field="spec"></td>
+                <td class="input-cell"><input type="text" value="${i <= 5 ? mat.factory : ''}" data-field="factory"></td>
+                <td class="input-cell"><input type="number" value="${i <= 5 ? mat.price : ''}" data-field="price" step="0.01"></td>
+                <td class="input-cell"><input type="number" value="${i <= 5 ? qty : ''}" data-field="qty" min="1"></td>
+                <td style="font-weight:500;color:#2d3748;">${i <= 5 ? '¥' + (mat.price * qty).toFixed(2) : ''}</td>
+                <td><button class="btn btn-danger btn-sm">删除</button></td>
+            `;
+            itemsBody.appendChild(tr);
+        }
+
+        // 注入 Shadow DOM
+        const widget = document.getElementById('inner-system-widget');
+        const shadow = widget.attachShadow({ mode: 'open' });
+        shadow.innerHTML = `
+            <style>
+                :host { display: block; }
+                .widget-content { background: white; padding: 16px; border-radius: 4px; }
+                .widget-title { font-size: 13px; color: #718096; margin-bottom: 12px; }
+                .widget-form { display: flex; gap: 12px; align-items: flex-end; }
+                .widget-field { flex: 1; }
+                .widget-field label { display: block; font-size: 12px; color: #4a5568; margin-bottom: 4px; }
+                .widget-field input { width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 13px; }
+                .widget-field input:focus { outline: none; border-color: #4299e1; }
+                .widget-btn { padding: 8px 16px; background: #48bb78; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+                .widget-btn:hover { background: #38a169; }
+            </style>
+            <div class="widget-content">
+                <div class="widget-title">物资追溯码查询 (第三方系统)</div>
+                <div class="widget-form">
+                    <div class="widget-field">
+                        <label>UDI追溯码</label>
+                        <input type="text" id="udi_code" placeholder="请输入或扫描追溯码">
+                    </div>
+                    <div class="widget-field">
+                        <label>批次号</label>
+                        <input type="text" id="batch_no" placeholder="生产批次">
+                    </div>
+                    <div class="widget-field">
+                        <label>有效期</label>
+                        <input type="date" id="expire_date">
+                    </div>
+                    <button class="widget-btn">查询追溯信息</button>
+                </div>
+            </div>
+        `;
+    </script>
+</body>
+
+</html>
