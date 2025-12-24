@@ -142,6 +142,96 @@ class AnchorFillStrategy(BaseFillStrategy):
             self._log(f"❌ 锚点扫描失败: {e}", "error")
             return []
     
+    def _build_multi_anchor_map(self, anchor_config) -> List[dict]:
+        """
+        多重锚定列匹配 - 使用多个列组合精准定位行
+        
+        Args:
+            anchor_config: AnchorConfig 对象，包含多个锚定列配对
+            
+        Returns:
+            匹配结果列表
+        """
+        from app.domain.entities.anchor_config import AnchorConfig
+        
+        if not isinstance(anchor_config, AnchorConfig) or anchor_config.anchor_count == 0:
+            self._log("❌ 无效的锚定配置", "error")
+            return []
+        
+        enabled_anchors = anchor_config.enabled_anchors
+        self._log(f"⚓ 多重锚定模式：使用 {len(enabled_anchors)} 个锚定列")
+        
+        # 收集每个锚定列的网页数据
+        web_column_data = {}  # {col_label: {row_idx: value}}
+        
+        for pair in enabled_anchors:
+            self._log(f"   📍 扫描锚定列: {pair.web_column_label}")
+            
+            try:
+                # 将 xpath 中的具体行号替换为通用匹配
+                generic_xpath = re.sub(r'tr\[\d+\]', 'tr', pair.web_column_xpath)
+                elements = self.tab.eles(f'xpath:{generic_xpath}')
+                
+                col_data = {}
+                for row_idx, ele in enumerate(elements):
+                    txt = (ele.text or ele.attr('value') or '').strip()
+                    col_data[row_idx] = txt
+                
+                web_column_data[pair.excel_column] = col_data
+                self._log(f"      ✅ 找到 {len(col_data)} 个值")
+                
+            except Exception as e:
+                self._log(f"      ❌ 扫描失败: {e}", "error")
+                web_column_data[pair.excel_column] = {}
+        
+        # 计算网页总行数
+        if web_column_data:
+            max_web_rows = max(len(v) for v in web_column_data.values())
+        else:
+            max_web_rows = 0
+        
+        self._log(f"   📊 网页表格共 {max_web_rows} 行")
+        
+        # 匹配 Excel 行与网页行
+        matched_rows = []
+        
+        for excel_idx, excel_row in self.excel_data.iterrows():
+            # 提取 Excel 中所有锚定列的值
+            excel_anchor_values = {}
+            for pair in enabled_anchors:
+                val = str(excel_row.get(pair.excel_column, '')).strip()
+                excel_anchor_values[pair.excel_column] = val
+            
+            # 在网页中查找所有锚定列值都匹配的行
+            for web_row_idx in range(max_web_rows):
+                all_match = True
+                
+                for col_name, excel_val in excel_anchor_values.items():
+                    web_val = web_column_data.get(col_name, {}).get(web_row_idx, '')
+                    
+                    if excel_val != web_val:
+                        all_match = False
+                        break
+                
+                if all_match:
+                    # 找到完全匹配的行
+                    anchor_values_str = ', '.join(excel_anchor_values.values())
+                    matched_rows.append({
+                        'excel_idx': excel_idx,
+                        'excel_data': excel_row,
+                        'web_row_idx': web_row_idx,
+                        'anchor_value': anchor_values_str,
+                        'anchor_values': excel_anchor_values  # 保留详细值
+                    })
+                    break  # 找到第一个匹配即可
+        
+        # 按网页行索引排序
+        matched_rows.sort(key=lambda x: x['web_row_idx'])
+        
+        self._log(f"   ⚓ 多重锚定匹配成功 {len(matched_rows)}/{len(self.excel_data)} 行")
+        
+        return matched_rows
+    
     def _execute_anchor_fill(self, matched_rows: List[dict], key_column: str, fill_mode: str):
         """执行锚点模式填充"""
         total_matched = len(matched_rows)

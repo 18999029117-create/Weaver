@@ -9,14 +9,15 @@ from app.ui.components import AnimatedButton
 class MappingCanvas(ctk.CTkFrame):
     """可视化映射画布（支持ElementFingerprint）"""
     
-    def __init__(self, master, excel_columns, web_fingerprints, on_mapping_complete=None, on_element_click=None, on_add_computed_column=None, width=800, height=600):
+    def __init__(self, master, excel_columns, web_fingerprints, on_mapping_complete=None, on_element_click=None, on_add_computed_column=None, width=800, height=600, manual_pick_mode=False):
         super().__init__(master, width=width, height=height)
         
         self.excel_columns = list(excel_columns) # copy
-        self.web_fingerprints = web_fingerprints
+        self.web_fingerprints = list(web_fingerprints) if web_fingerprints else []  # 可能为空
         self.on_mapping_complete = on_mapping_complete
         self.on_element_click = on_element_click
         self.on_add_computed_column = on_add_computed_column
+        self.manual_pick_mode = manual_pick_mode  # 手动选择模式
         
         self.mappings = {}
         self.selected_excel = None
@@ -40,8 +41,14 @@ class MappingCanvas(ctk.CTkFrame):
                            text_color=ThemeColors.ACCENT_PRIMARY)
         title.pack()
         
+        # 根据模式显示不同提示
+        if self.manual_pick_mode:
+            hint_text = "点击Excel列 → 双击网页元素 → 自动映射"
+        else:
+            hint_text = "点击Excel列 → 点击网页字段 → 自动连线"
+        
         hint = ctk.CTkLabel(top_frame,
-                          text="点击Excel列 → 点击网页字段 → 自动连线（绿色=高稳定，黄色=中等，蓝色=低稳定）",
+                          text=hint_text,
                           font=ctk.CTkFont(family=UIStyles.FONT_FAMILY,size=10),
                           text_color=ThemeColors.TEXT_SECONDARY)
         hint.pack()
@@ -164,7 +171,20 @@ class MappingCanvas(ctk.CTkFrame):
             
             self.excel_boxes[col_name] = (x1, y, x2, y + box_height, box_id, text_id)
         
-        # 绘制网页字段（边框左对齐，文字居中）
+        # 绘制网页字段（手动模式下跳过，由 add_picked_field 动态添加）
+        if self.manual_pick_mode:
+            # 手动模式：显示提示文字
+            if not self.web_fingerprints:
+                self.canvas.create_text(
+                    web_left_edge + 150, y_offset + 30,
+                    text="双击网页元素以添加...",
+                    fill="#999999",
+                    font=(UIStyles.FONT_FAMILY, 12, "italic"),
+                    tags=("manual_hint",)
+                )
+            return  # 不绘制预设的 web boxes
+        
+        # 自动模式：绘制所有网页字段
         for idx, fingerprint in enumerate(self.web_fingerprints):
             y = y_offset + idx * (box_height + spacing)
             
@@ -310,6 +330,13 @@ class MappingCanvas(ctk.CTkFrame):
         self.canvas.tag_lower(line_id)
         self.connection_lines[excel_col] = line_id
         
+        # 调试：检查 fingerprint 是否有 related_inputs
+        related = getattr(fingerprint, 'related_inputs', None)
+        print(f"[MappingCanvas DEBUG] Creating mapping for '{excel_col}':")
+        print(f"  - fingerprint type: {type(fingerprint).__name__}")
+        print(f"  - related_inputs: {related}")
+        print(f"  - related_inputs count: {len(related) if related else 0}")
+        
         # 更新映射
         self.mappings[excel_col] = fingerprint
         
@@ -376,3 +403,194 @@ class MappingCanvas(ctk.CTkFrame):
             else:
                 outline_color = "#AAAAAA"
             self.canvas.itemconfig(box_id, outline=outline_color, fill="#FFFFFF", width=1)
+    
+    # ============================================================
+    # 手动选择模式 API
+    # ============================================================
+    
+    def add_picked_field(self, fingerprint, auto_map_to_selected: bool = True) -> bool:
+        """
+        动态添加用户选择的网页元素
+        
+        Args:
+            fingerprint: ElementFingerprint 对象或字典
+            auto_map_to_selected: 如果有选中的 Excel 列，自动建立映射
+            
+        Returns:
+            是否成功添加
+        """
+        from app.ui.styles import UIStyles
+        
+        # 移除提示文字
+        self.canvas.delete("manual_hint")
+        
+        # 将字典转换为简单对象（如果需要）
+        if isinstance(fingerprint, dict):
+            # 创建一个简单的指纹对象
+            class SimpleFingerprint:
+                """简化版指纹对象，用于手动选取的元素，兼容 ElementFingerprint 接口"""
+                def __init__(self, data):
+                    self.raw_data = data
+                    self.stability_score = 80  # 默认稳定性
+                    self.xpath = data.get('xpath', '')
+                    self.css_selector = data.get('css_selector', '')
+                    self.element_id = data.get('element_id', '')
+                    self.label_text = data.get('label_text', '')
+                    self.placeholder = data.get('placeholder', '')
+                    self.is_header = data.get('is_header', False)
+                    self.related_inputs = data.get('related_inputs', [])
+                    self.group_count = data.get('group_count', 0)
+                    self.frame_path = data.get('frame_path', '')
+                    self.in_iframe = data.get('in_iframe', False)
+                    
+                    # 构建 selectors 字典（兼容 ElementFingerprint 接口）
+                    self.selectors = {
+                        'id': f"#{self.element_id}" if self.element_id else None,
+                        'xpath': self.xpath or None,
+                        'css': self.css_selector or None,
+                        'aria': data.get('aria_label') or None,
+                        'text': self.label_text or None
+                    }
+                    
+                    # 构建 features 字典（填充逻辑使用）
+                    self.features = {
+                        'name': data.get('name', '') or self.element_id or '',
+                        'type': data.get('input_type', 'text'),
+                        'tag': data.get('tag_name', 'input'),
+                        'id': self.element_id or ''
+                    }
+                    
+                    # 构建 anchors 字典（填充逻辑使用）
+                    self.anchors = {
+                        'label': self.label_text or '',
+                        'placeholder': self.placeholder or '',
+                        'visual_label': data.get('parent_header', '') or self.label_text or ''
+                    }
+                    
+                    # 构建 table_info 字典（表格填充逻辑使用）
+                    self.table_info = {
+                        'row_index': data.get('row_index', -1),
+                        'column_index': data.get('column_index', -1),
+                        'table_header': data.get('parent_header', '') or self.label_text or ''
+                    }
+                    
+                def get_display_name(self):
+                    """获取显示名称 - 优先使用表头标签，过滤通用占位符"""
+                    # 通用占位符列表（这些不应该作为显示名）
+                    generic_placeholders = ['请输入', '请选择', '输入', '选择', 'enter', 'input', 'select']
+                    
+                    # 1. 优先使用 label_text（表头/标签文本）
+                    if self.label_text:
+                        text = self.label_text.strip()
+                        if text and not any(g in text.lower() for g in generic_placeholders):
+                            return text[:30]
+                    
+                    # 2. 如果是表头元素，尝试从 raw_data 获取更好的名称
+                    if self.is_header and self.raw_data:
+                        header_text = self.raw_data.get('header_text') or self.raw_data.get('text_content', '')
+                        if header_text:
+                            return header_text[:30]
+                    
+                    # 3. 使用 placeholder，但过滤通用文本
+                    if self.placeholder:
+                        text = self.placeholder.strip()
+                        if text and not any(g in text.lower() for g in generic_placeholders):
+                            return text[:30]
+                    
+                    # 4. 使用 element_id
+                    if self.element_id:
+                        return f"#{self.element_id}"[:30]
+                    
+                    # 5. 使用 xpath 最后一部分
+                    return self.xpath.split('/')[-1][:30] if self.xpath else "未知元素"
+                
+                def get_fallback_selectors(self):
+                    """返回备选选择器列表，用于自愈定位"""
+                    fallbacks = []
+                    if self.selectors.get('id'):
+                        fallbacks.append(('id', self.selectors['id']))
+                    if self.selectors.get('xpath'):
+                        fallbacks.append(('xpath', self.selectors['xpath']))
+                    if self.selectors.get('css'):
+                        fallbacks.append(('css', self.selectors['css']))
+                    return fallbacks
+                
+                def get_best_selector(self):
+                    """获取最佳选择器"""
+                    for key in ['id', 'xpath', 'css']:
+                        if self.selectors.get(key):
+                            return self.selectors[key]
+                    return self.xpath or ''
+            
+            fingerprint = SimpleFingerprint(fingerprint)
+        
+        # 检查是否已存在
+        for idx, (_, _, _, _, _, _, existing_fp) in self.web_boxes.items():
+            if hasattr(existing_fp, 'xpath') and existing_fp.xpath == fingerprint.xpath:
+                print(f"[MappingCanvas] Field already exists: {fingerprint.xpath}")
+                return False
+        
+        # 计算新元素位置
+        idx = len(self.web_boxes)
+        self.web_fingerprints.append(fingerprint)
+        
+        # 布局参数
+        canvas_width = 1000
+        web_left_edge = canvas_width - 350
+        min_box_width = 150
+        max_box_width = 400
+        box_height = 55
+        spacing = 15
+        padding = 20
+        y_offset = 60
+        
+        y = y_offset + idx * (box_height + spacing)
+        
+        # 获取显示名称
+        display_name = fingerprint.get_display_name()
+        
+        # 计算框宽度
+        text_width = len(display_name) * 14 + padding * 2
+        box_width = max(min_box_width, min(text_width, max_box_width))
+        
+        x1 = web_left_edge
+        x2 = web_left_edge + box_width
+        
+        # 绘制框
+        box_id = self.canvas.create_rectangle(
+            x1, y, x2, y + box_height,
+            fill="#FFFFFF",
+            outline="#000000",
+            width=1,
+            tags=("web_box", f"web_{idx}")
+        )
+        
+        # 绘制文字
+        if len(display_name) > 28:
+            display_text = display_name[:26] + "..."
+        else:
+            display_text = display_name
+        
+        text_id = self.canvas.create_text(
+            (x1 + x2) / 2, y + box_height/2,
+            text=display_text,
+            fill="#000000",
+            font=(UIStyles.FONT_FAMILY, 14),
+            tags=(f"web_{idx}",)
+        )
+        
+        self.web_boxes[idx] = (x1, y, x2, y + box_height, box_id, text_id, fingerprint)
+        
+        # 更新滚动区域
+        max_items = max(len(self.excel_columns), len(self.web_fingerprints))
+        total_height = 100 + max_items * (box_height + spacing)
+        self.canvas.configure(scrollregion=(0, 0, canvas_width, total_height))
+        
+        # 如果有选中的 Excel 列，自动建立映射
+        if auto_map_to_selected and self.selected_excel:
+            self._select_web_field(idx, box_id, fingerprint)
+            print(f"[MappingCanvas] Auto-mapped '{self.selected_excel}' -> '{display_name}'")
+        
+        print(f"[MappingCanvas] Added picked field: {display_name}")
+        return True
+

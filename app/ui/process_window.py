@@ -56,6 +56,9 @@ class ProcessWindow(ctk.CTkToplevel):
         self._scan_and_match()  # 扫描并智能匹配
         self._setup_layout()
         
+        # 注入交互式选择脚本，启动轮询
+        self._inject_and_start_pick_mode()
+        
         threading.Thread(target=self._lock_browser_layout, daemon=True).start()
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -88,8 +91,51 @@ class ProcessWindow(ctk.CTkToplevel):
                 self.master.add_log(f"   已自动应用 {len(self.auto_mappings)} 个映射", "success")
 
     def highlight_element(self, fingerprint):
-        """在浏览器中高亮显示元素 - 委托给 controller"""
-        self.session_controller.highlight_element(fingerprint)
+        """在浏览器中高亮显示元素 - 点击画布元素框时闪烁网页输入框"""
+        try:
+            tab = self._get_target_tab()
+            if not tab:
+                return
+            
+            # 收集要闪烁的 XPath
+            xpaths = []
+            
+            # 获取主元素的 xpath
+            if hasattr(fingerprint, 'selectors') and fingerprint.selectors:
+                main_xpath = fingerprint.selectors.get('xpath', '')
+            elif hasattr(fingerprint, 'xpath'):
+                main_xpath = fingerprint.xpath
+            elif hasattr(fingerprint, 'raw_data') and fingerprint.raw_data:
+                main_xpath = fingerprint.raw_data.get('xpath', '')
+            else:
+                main_xpath = ''
+            
+            if main_xpath:
+                xpaths.append(main_xpath)
+            
+            # 如果是批量选择，也闪烁关联的输入框
+            related = getattr(fingerprint, 'related_inputs', None)
+            if not related and hasattr(fingerprint, 'raw_data'):
+                related = fingerprint.raw_data.get('related_inputs', [])
+            
+            if related:
+                for inp in related:
+                    xpath = inp.get('xpath', '') if isinstance(inp, dict) else getattr(inp, 'xpath', '')
+                    if xpath and xpath not in xpaths:
+                        xpaths.append(xpath)
+            
+            # 调用浏览器闪烁功能
+            if xpaths:
+                self.browser_mgr.flash_elements(xpaths, tab)
+                
+        except Exception as e:
+            print(f"[ProcessWindow] highlight_element error: {e}")
+        
+        # 也调用 controller 的高亮逻辑（用于 ElementFingerprint）
+        try:
+            self.session_controller.highlight_element(fingerprint)
+        except:
+            pass
 
     def _set_perfect_split(self):
         """精准分屏：软件 25% | 浏览器 75%"""
@@ -164,6 +210,7 @@ class ProcessWindow(ctk.CTkToplevel):
             'on_continue': self._on_continue_fill,
             'on_pagination_select': self._on_pagination_select,
             'on_pagination_mode_change': self._on_pagination_mode_change,
+            'on_anchor_config': self._open_anchor_config,
         }
         
         self.toolbar = ProcessToolbar(
@@ -251,14 +298,15 @@ class ProcessWindow(ctk.CTkToplevel):
         parent.grid_columnconfigure(0, weight=1)
         parent.grid_rowconfigure(0, weight=1)
 
-        # 创建智能映射画布（传入过滤后的元素列表）
+        # 创建智能映射画布（启用手动选择模式）
         self.mapping_canvas = MappingCanvas(
             parent,
             excel_columns=self.excel_data.columns.tolist(),
-            web_fingerprints=self.matched_fingerprints,  # ← 只显示匹配的
+            web_fingerprints=[],  # 手动模式：初始为空，用户双击添加
             on_mapping_complete=self._on_canvas_mapping_complete,
-            on_element_click=self.highlight_element,  # ← 传入点击回调
-            on_add_computed_column=self._open_column_computer # ← 传入添加列回调
+            on_element_click=self.highlight_element,
+            on_add_computed_column=self._open_column_computer,
+            manual_pick_mode=True  # 启用手动选择模式
         )
         self.mapping_canvas.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
     
@@ -357,7 +405,6 @@ class ProcessWindow(ctk.CTkToplevel):
             threading.Thread(target=self._execute_anchor_page_fill, args=(key_column,), daemon=True).start()
         else:
             # 普通模式继续
-            self._scan_web_form()
             threading.Thread(target=self._execute_fill_continue, daemon=True).start()
     
     def _execute_anchor_page_fill(self, key_column):
@@ -506,6 +553,89 @@ class ProcessWindow(ctk.CTkToplevel):
             excel_data=self.excel_data,
             on_complete_callback=on_column_added,
             add_log_callback=self.master.add_log
+        )
+    
+    def _open_anchor_config(self):
+        """打开多重锚定配置对话框 - 复用现有扫描结果"""
+        from app.ui.dialogs.anchor_config_dialog import AnchorConfigDialog
+        from app.domain.entities.anchor_config import WebColumnInfo
+        
+        # 复用已扫描的元素 - 从 session_controller 获取
+        fingerprints = self.session_controller.web_fingerprints
+        
+        if not fingerprints:
+            self.master.add_log("⚠️ 未扫描到网页元素，正在重新扫描...", "warning")
+            fingerprints = self.session_controller.scan_page()
+        
+        if not fingerprints:
+            from tkinter import messagebox
+            messagebox.showwarning(
+                "未找到元素",
+                "未能检测到网页元素。\n请确保页面已加载完成。",
+                parent=self
+            )
+            return
+        
+        self.master.add_log(f"📊 使用已扫描的 {len(fingerprints)} 个元素")
+        
+        # 从 fingerprints 中提取列信息
+        # 按 placeholder/label 分组，识别表格列
+        web_columns = []
+        seen_labels = set()
+        
+        for fp in fingerprints:
+            # 获取元素标识
+            label = fp.get_display_name()
+            if label in seen_labels:
+                continue
+            seen_labels.add(label)
+            
+            # 判断是否是输入元素
+            is_input = fp.raw_data.get('tag', '').lower() in ['input', 'textarea', 'select']
+            
+            # 获取 XPath
+            xpath = fp.selectors.get('xpath', '')
+            
+            web_columns.append(WebColumnInfo(
+                label=label,
+                xpath=xpath,
+                is_readonly=not is_input,
+                is_input=is_input,
+                sample_values=[]
+            ))
+        
+        self.master.add_log(f"   找到 {len(web_columns)} 个唯一网页列")
+        
+        if not web_columns:
+            from tkinter import messagebox
+            messagebox.showwarning(
+                "未找到列",
+                "未能从扫描结果中提取列信息。",
+                parent=self
+            )
+            return
+        
+        # Excel 列名
+        excel_columns = self.excel_data.columns.tolist()
+        
+        def on_config_confirm(config):
+            """锚定配置确认回调"""
+            self.anchor_config = config
+            self.master.add_log(f"✅ 锚定配置已保存: {config.anchor_count} 个锚定列")
+            
+            # 更新下拉框显示
+            if config.anchor_count > 0:
+                anchor_names = [p.excel_column for p in config.enabled_anchors]
+                display = f"🔗 {', '.join(anchor_names[:2])}..." if len(anchor_names) > 2 else f"🔗 {', '.join(anchor_names)}"
+                self.anchor_var.set(display)
+        
+        # 打开对话框
+        AnchorConfigDialog(
+            self,
+            excel_columns=excel_columns,
+            web_columns=web_columns,
+            initial_config=getattr(self, 'anchor_config', None),
+            on_confirm=on_config_confirm
         )
 
     def _execute_fill(self):
@@ -766,6 +896,109 @@ class ProcessWindow(ctk.CTkToplevel):
             traceback.print_exc()
             self.master.add_log(f"❌ 加载失败: {e}", "error")
 
+    # ============================================================
+    # 交互式选择模式（手动双击网页元素）
+    # ============================================================
+    
+    def _inject_and_start_pick_mode(self):
+        """注入交互脚本并启动轮询"""
+        try:
+            tab = self._get_target_tab()
+            if tab:
+                # 注入交互脚本
+                injected = self.browser_mgr.inject_interaction_script(tab)
+                if injected:
+                    self.master.add_log("🎯 交互模式已启用 - 请双击网页元素进行选择")
+                    # 启动轮询循环
+                    self._pick_mode_active = True
+                    self._start_pick_loop()
+                else:
+                    self.master.add_log("⚠️ 交互脚本注入失败", "warning")
+        except Exception as e:
+            print(f"[ProcessWindow] Failed to inject interaction script: {e}")
+    
+    def _start_pick_loop(self):
+        """启动轮询循环"""
+        if not getattr(self, '_pick_mode_active', False):
+            return
+        
+        self._check_browser_pick()
+        # 每 1000ms 轮询一次 (优化性能)
+        self.after(1000, self._start_pick_loop)
+    
+    def _check_browser_pick(self):
+        """检查用户是否双击了输入框元素"""
+        try:
+            tab = self._get_target_tab()
+            if not tab:
+                return
+            
+            # 直接获取用户选择的元素 (不做存活检查，减少开销)
+            picked = self.browser_mgr.get_picked_element(tab)
+            
+            if picked:
+                # 用户双击选择了一个输入框
+                label = picked.get('label_text') or picked.get('parent_header') or picked.get('placeholder') or picked.get('element_id') or '未知元素'
+                
+                # 过滤通用占位符
+                if label in ['请输入', '请选择', '输入', '选择']:
+                    label = picked.get('parent_header') or picked.get('element_id') or '输入框'
+                
+                has_siblings = picked.get('has_siblings', False)
+                sibling_count = picked.get('sibling_count', 0)
+                
+                if has_siblings and sibling_count >= 2:
+                    # 检测到同级输入框，询问用户是否批量选择
+                    from tkinter import messagebox
+                    result = messagebox.askyesno(
+                        "批量选择",
+                        f"检测到该输入框 \"{label}\" 有 {sibling_count} 个同类输入框。\n\n是否选择同行/列的所有输入框？",
+                        parent=self
+                    )
+                    
+                    if result:
+                        # 用户选择批量添加
+                        sibling_inputs = picked.get('sibling_inputs', [])
+                        
+                        # 闪烁所有同级元素
+                        xpaths = [s.get('xpath') for s in sibling_inputs if s.get('xpath')]
+                        xpaths.append(picked.get('xpath'))  # 包括当前选中的
+                        self.browser_mgr.flash_elements(xpaths, tab)
+                        
+                        # 标记为批量选择，记录所有关联输入框
+                        picked['is_batch'] = True
+                        picked['related_inputs'] = sibling_inputs
+                        picked['group_count'] = sibling_count + 1
+                        
+                        self.master.add_log(f"📊 批量选择: {label}（{sibling_count + 1} 个输入框）")
+                    else:
+                        # 用户选择只添加单个
+                        self.master.add_log(f"✅ 已选择: {label[:30]}")
+                else:
+                    # 没有同级元素，直接添加单个
+                    self.master.add_log(f"✅ 已选择: {label[:30]}")
+                
+                # 添加到画布
+                self.mapping_canvas.add_picked_field(picked, auto_map_to_selected=True)
+                    
+        except Exception as e:
+            # 轮询异常不要打断循环
+            import traceback
+            traceback.print_exc()
+            print(f"[ProcessWindow] Pick check error: {e}")
+    
+    def _stop_pick_mode(self):
+        """停止选择模式"""
+        self._pick_mode_active = False
+        try:
+            tab = self._get_target_tab()
+            if tab:
+                self.browser_mgr.set_pick_mode(False, tab)
+        except:
+            pass
+
     def on_closing(self):
+        self._stop_pick_mode()
         self.stop_event.set()
         self.destroy()
+

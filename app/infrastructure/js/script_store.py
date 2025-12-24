@@ -17,6 +17,7 @@ from pathlib import Path
 
 # 缓存外部 JS 文件内容
 _form_analyzer_js_cache: Optional[str] = None
+_interaction_js_cache: Optional[str] = None
 
 
 class ScriptStore:
@@ -55,6 +56,40 @@ class ScriptStore:
                 return ""
         except Exception as e:
             print(f"[ScriptStore] Failed to load form_analyzer.js: {e}")
+            return ""
+    
+    # ============================================================
+    # 交互脚本（用于手动选择元素）
+    # ============================================================
+    @staticmethod
+    def get_interaction_js() -> str:
+        """
+        加载交互式选择 JS 脚本
+        
+        功能：
+        - 悬停高亮（灰色边框）
+        - 双击选择元素
+        - 表头识别与关联输入框查找
+        - 闪烁动画反馈
+        
+        Returns:
+            JavaScript 代码字符串
+        """
+        global _interaction_js_cache
+        
+        if _interaction_js_cache is not None:
+            return _interaction_js_cache
+        
+        try:
+            js_path = Path(__file__).parent / "interaction.js"
+            if js_path.exists():
+                _interaction_js_cache = js_path.read_text(encoding="utf-8")
+                return _interaction_js_cache
+            else:
+                print(f"[ScriptStore] interaction.js not found at {js_path}")
+                return ""
+        except Exception as e:
+            print(f"[ScriptStore] Failed to load interaction.js: {e}")
             return ""
     
     # ============================================================

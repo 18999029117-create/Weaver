@@ -124,6 +124,13 @@ class ProcessToolbar(ctk.CTkFrame):
         self.anchor_selector = self._create_dropdown(row, anchor_values, self.anchor_var)
         self.anchor_selector.pack(side="left", padx=2)
         
+        # 多重锚定配置按钮
+        self.anchor_config_btn = AnimatedButton(
+            row, text="🔗配置", width=60, height=30,
+            command=self.callbacks.get('on_anchor_config')
+        )
+        self.anchor_config_btn.pack(side="left", padx=2)
+        
         # 录入模式
         ctk.CTkLabel(row, text="录入模式:", font=(UIStyles.FONT_FAMILY, 12),
                     text_color=ThemeColors.TEXT_SECONDARY).pack(side="left", padx=(15, 2))

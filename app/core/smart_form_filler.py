@@ -139,6 +139,29 @@ class SmartFormFiller:
         print("⏳ 检测页面加载状态...")
         SmartFormFiller._wait_for_loading_complete(tab, timeout=5)
         
+        # ===== 新增: 录入前计算（遵循填充完成判定规则）=====
+        # 以网页输入框数量为准，计算每个批量映射的目标填充次数
+        batch_fill_limits = {}  # {excel_col: web_input_count}
+        max_web_inputs = 0
+        
+        for excel_col, fingerprint in fingerprint_mappings.items():
+            related_inputs = getattr(fingerprint, 'related_inputs', None)
+            if related_inputs and len(related_inputs) > 0:
+                # 批量模式: 1个主元素 + N个关联元素
+                web_input_count = 1 + len(related_inputs)
+                batch_fill_limits[excel_col] = web_input_count
+                max_web_inputs = max(max_web_inputs, web_input_count)
+                print(f"📊 列 [{excel_col}]: 网页 {web_input_count} 个输入框")
+        
+        # 以网页输入框数量为准，但不能超过 Excel 数据行数
+        if batch_fill_limits:
+            # 优先使用网页输入框数量
+            effective_total_rows = min(max_web_inputs, total_rows)
+            print(f"📊 填充计划: 网页 {max_web_inputs} 个输入框，Excel {total_rows} 行数据")
+            print(f"📊 实际填充: {effective_total_rows} 次（以较小者为准）")
+        else:
+            effective_total_rows = total_rows
+        
         # --- 锚点模式前置处理: 构建网页行索引 ---
         web_row_map = {} # { "KeyInfo": row_index }
         if fill_mode == 'batch_table' and key_column and key_column in fingerprint_mappings:
@@ -182,10 +205,15 @@ class SmartFormFiller:
         for row_idx, row_data in excel_data.iterrows():
             row_num = row_idx + 1
             
+            # ===== 新增: 早期终止检查（遵循填充完成判定规则）=====
+            if row_idx >= effective_total_rows:
+                print(f"\n✅ 已达到有效填充行数上限 ({effective_total_rows} 行)，停止填充")
+                break
+            
             try:
                 if progress_callback:
-                    progress_callback(row_num, total_rows, 
-                                   f"📝 正在填写第 {row_num}/{total_rows} 行", "info")
+                    progress_callback(row_num, effective_total_rows, 
+                                   f"📝 正在填写第 {row_num}/{effective_total_rows} 行", "info")
                 
                 print(f"\n--- 填写第 {row_num} 行 ---")
                 filled_fields = 0
@@ -234,7 +262,44 @@ class SmartFormFiller:
                             fingerprint.features.get('type', '')
                         )
                         
-                        # --- 核心逻辑: 选择器处理 ---
+                        # --- 核心逻辑: 批量输入框处理（遵循批量填充原则）---
+                        # 检查 fingerprint 是否有 related_inputs (批量选择模式)
+                        related_inputs = getattr(fingerprint, 'related_inputs', None)
+                        
+                        if related_inputs and len(related_inputs) > 0:
+                            # 批量模式：根据 row_idx 选择对应的输入框
+                            # Excel 行 0 → 主元素（fingerprint 本身）
+                            # Excel 行 1 → related_inputs[0]
+                            # Excel 行 2 → related_inputs[1]
+                            # 依此类推...
+                            
+                            if row_idx == 0:
+                                # 第一行使用主元素
+                                target_xpath = fingerprint.selectors.get('xpath', '')
+                            elif row_idx - 1 < len(related_inputs):
+                                # 后续行使用 related_inputs
+                                target_input = related_inputs[row_idx - 1]
+                                target_xpath = target_input.get('xpath', '') if isinstance(target_input, dict) else getattr(target_input, 'xpath', '')
+                            else:
+                                # 超出了可用输入框数量
+                                print(f"  ⚠️ 列 [{excel_col}]: Excel 行数超过网页输入框数量，跳过第 {row_num} 行")
+                                continue
+                            
+                            # 使用目标 xpath 填充
+                            if target_xpath:
+                                try:
+                                    ele = tab.ele(f'xpath:{target_xpath}', timeout=0.5)
+                                    if ele:
+                                        ele.clear()
+                                        ele.input(transformed_value)
+                                        filled_fields += 1
+                                    else:
+                                        raise Exception(f"无法定位元素: {target_xpath}")
+                                except Exception as e:
+                                    current_row_errors.append(f"第{row_num}行: 字段[{excel_col}] 填写失败: {e}")
+                            continue  # 跳过后续常规处理
+                        
+                        # --- 核心逻辑: 选择器处理 (非批量模式) ---
                         target_fingerprint = fingerprint
                         use_dynamic_selector = False
                         dynamic_selector = None

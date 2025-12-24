@@ -51,6 +51,54 @@ UI → Application → Core → Domain ← Infrastructure
 - **禁止**: `core/` 导入 `ui/`
 - **允许**: `ui/` 导入 `application/`
 
+### 代码复用原则（核心规则）
+
+> [!IMPORTANT]
+> **开发新功能时，必须优先复用现有代码：**
+
+1. **先查后建**：开发新功能前，必须先搜索项目中是否已有类似功能的模块或方法
+2. **复用优先**：如果存在可复用的方法，优先调用或扩展现有方法，而不是重新编写
+3. **典型示例**：
+   - 需要扫描网页元素 → 复用 `SmartFormAnalyzer.deep_scan_page()`
+   - 需要元素指纹 → 复用 `session_controller.web_fingerprints`
+   - 需要填充表单 → 复用 `SmartFormFiller` 的方法
+4. **仅当确认无可用方法时**，才创建新方法
+
+### 批量填充原则（核心规则）
+
+> [!IMPORTANT]
+> **当用户选择了批量输入框时，填充逻辑必须遵循以下原则：**
+
+1. **一对一映射**：Excel 表格的每一行数据对应网页的一个输入框
+2. **顺序填充**：
+   - Excel 第 1 行数据 → 网页第 1 个输入框
+   - Excel 第 2 行数据 → 网页第 2 个输入框
+   - 依此类推...
+3. **数量对齐**：如果 Excel 行数 > 网页输入框数，多余的数据跳过；反之亦然
+4. **批量标识**：`SimpleFingerprint.related_inputs` 数组存储所有同类输入框的 XPath
+5. **实现位置**：此逻辑在 `app/core/smart_form_filler.py` 的 `fill_form_with_healing` 方法中实现
+
+### 填充完成判定规则（核心规则）
+
+> [!IMPORTANT]
+> **填充完成的判定逻辑：**
+
+1. **录入前计算**：软件必须在开始填入前计算：
+   - `web_input_count` = 用户选择的输入框总数（1 + len(related_inputs)）
+   - `excel_row_count` = Excel 表格中需要填充的行数
+   
+2. **实际填充次数** = `min(web_input_count, excel_row_count)`
+
+3. **完成条件**（满足任一即停止）：
+   - 所有网页输入框都已填完
+   - 所有 Excel 数据都已填完
+   
+4. **日志输出**：填充前必须输出：
+   ```
+   📊 填充计划: Excel {excel_row_count} 行 → 网页 {web_input_count} 个输入框
+   📊 实际填充: {actual_count} 次
+   ```
+
 ---
 
 ## 代码风格

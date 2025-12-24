@@ -537,9 +537,28 @@ class FillSessionController:
                 self._log("🛑 用户手动终止", "warning")
                 break
             
-            rows_on_page = self._count_rows_on_current_page()
-            if rows_on_page == 0:
-                rows_on_page = 5
+            # ===== 批量填充优先逻辑 =====
+            # 优先检查是否有批量选择的输入框
+            max_batch_inputs = 0
+            for fp in self.field_mapping.values():
+                related = getattr(fp, 'related_inputs', None)
+                # 调试日志
+                print(f"[DEBUG] fingerprint type: {type(fp).__name__}, related_inputs: {related}, len: {len(related) if related else 0}")
+                if related and len(related) > 0:
+                    batch_count = 1 + len(related)  # 主元素 + 关联元素
+                    max_batch_inputs = max(max_batch_inputs, batch_count)
+            
+            print(f"[DEBUG] max_batch_inputs = {max_batch_inputs}")
+            
+            if max_batch_inputs > 0:
+                # 批量模式：以用户选择的输入框数量为准
+                rows_on_page = max_batch_inputs
+                self._log(f"📊 批量填充模式: {rows_on_page} 个输入框")
+            else:
+                # 非批量模式：检测页面行数
+                rows_on_page = self._count_rows_on_current_page()
+                if rows_on_page == 0:
+                    rows_on_page = total_rows  # 使用全部 Excel 行数
             
             end_row_idx = min(current_row_idx + rows_on_page, total_rows)
             page_data = self.excel_data.iloc[current_row_idx:end_row_idx]
@@ -799,14 +818,18 @@ class FillSessionController:
     
     # ==================== 工具方法 ====================
     
-    def highlight_element(self, fingerprint: ElementFingerprint):
-        """高亮显示元素"""
-        id_selector = fingerprint.selectors.get('id', '')
-        css_selector = fingerprint.selectors.get('css', '')
-        xpath = fingerprint.selectors.get('xpath', '')
-        elem_id = fingerprint.raw_data.get('id', '')
-        shadow_depth = fingerprint.raw_data.get('shadow_depth', 0)
-        shadow_host_id = fingerprint.raw_data.get('shadow_host_id', '')
+    def highlight_element(self, fingerprint):
+        """高亮显示元素（兼容 ElementFingerprint 和 SimpleFingerprint）"""
+        # 获取 selectors，兼容两种指纹类型
+        selectors = getattr(fingerprint, 'selectors', {}) or {}
+        raw_data = getattr(fingerprint, 'raw_data', {}) or {}
+        
+        id_selector = selectors.get('id', '') or ''
+        css_selector = selectors.get('css', '') or ''
+        xpath = selectors.get('xpath', '') or getattr(fingerprint, 'xpath', '') or ''
+        elem_id = raw_data.get('id', '') or getattr(fingerprint, 'element_id', '') or ''
+        shadow_depth = raw_data.get('shadow_depth', 0)
+        shadow_host_id = raw_data.get('shadow_host_id', '')
         
         js_highlight = f"""
         (function() {{

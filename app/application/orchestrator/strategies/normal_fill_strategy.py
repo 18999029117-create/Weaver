@@ -53,9 +53,24 @@ class NormalFillStrategy(BaseFillStrategy):
                 self._log("🛑 用户手动终止", "warning")
                 break
             
-            rows_on_page = self._count_rows_on_current_page()
-            if rows_on_page == 0:
-                rows_on_page = 5  # 默认值
+            # ===== 批量填充优先逻辑（遵循批量填充原则）=====
+            # 优先检查是否有批量选择的输入框
+            max_batch_inputs = 0
+            for fp in self.field_mapping.values():
+                related = getattr(fp, 'related_inputs', None)
+                if related and len(related) > 0:
+                    batch_count = 1 + len(related)  # 主元素 + 关联元素
+                    max_batch_inputs = max(max_batch_inputs, batch_count)
+            
+            if max_batch_inputs > 0:
+                # 批量模式：以用户选择的输入框数量为准
+                rows_on_page = max_batch_inputs
+                self._log(f"📊 批量填充模式: {rows_on_page} 个输入框")
+            else:
+                # 非批量模式：检测页面行数
+                rows_on_page = self._count_rows_on_current_page()
+                if rows_on_page == 0:
+                    rows_on_page = total_rows  # 使用全部 Excel 行数
             
             end_row_idx = min(current_row_idx + rows_on_page, total_rows)
             page_data = self.excel_data.iloc[current_row_idx:end_row_idx]
