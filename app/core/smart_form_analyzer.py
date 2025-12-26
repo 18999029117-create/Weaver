@@ -38,7 +38,7 @@ class SmartFormAnalyzer:
 
 
     @staticmethod
-    def deep_scan_page(tab, max_wait=15, poll_interval=0.8):
+    def deep_scan_page(tab, max_wait=8, poll_interval=0.4):
         """
         深度扫描网页 - JS 快照模式 + 智能稳定性检测
         
@@ -102,8 +102,8 @@ class SmartFormAnalyzer:
                 # 稳定性检测
                 if current_count == last_count and current_count > 0:
                     stable_count += 1
-                    if stable_count >= 3:
-                        # 连续3次数量相同，认为稳定
+                    if stable_count >= 2:
+                        # 连续2次数量相同，认为稳定（从3次降为2次）
                         print(f"✅ 页面稳定 (连续 {stable_count} 次检测到 {current_count} 个元素)")
                         best_result = js_result
                         break
@@ -289,14 +289,15 @@ class SmartFormAnalyzer:
         """
         递归扫描所有 Iframe 内部的元素 (支持多层嵌套)
         
-        优化:
-        1. 递归穿透: 支持 Main -> Iframe -> Iframe 的嵌套结构
-        2. 分级等待: 
-           - 业务 Iframe (ifarmedj等): 启用 5s 智能轮询
-           - 普通 Iframe: 快速扫描，无元素即退出，避免拖慢整体速度
-        3. 使用 DrissionPage 的 get_frame() API 获取 ChromiumFrame 对象
+        通用增强 (v3.0):
+        1. 移除所有特定网站的硬编码判断
+        2. 引入 "内容感知智能等待" (Content-Aware Smart Wait)
+           - 自动检测 iframe 是否为空或正在加载
+           - 对重型业务 iframe 自动延长等待时间
+        3. 递归穿透所有同源 iframe
         """
         import time
+        from app.infrastructure.js.script_store import ScriptStore
         
         all_iframe_fingerprints = []
         MAX_DEPTH = 3  # 防止无限递归
@@ -306,70 +307,71 @@ class SmartFormAnalyzer:
             nonlocal all_iframe_fingerprints
             
             if depth > MAX_DEPTH:
-                print(f"      ⚠️ 达到最大递归深度 {MAX_DEPTH}，停止下探")
                 return
 
-            # 1. 扫描当前 Frame 的 Input 元素
+            # 1. 智能等待：基于内容的通用判断
+            # 这里的逻辑适用任何网站：如果页面没内容，就等多一会；有内容，就立即扫
+            start_wait = time.time()
+            max_wait_time = 8.0 # 通用最大等待时间
+            is_ready = False
+            
+            # 简易探针：检测是否有可见元素
+            probe_js = """
+            (function() {
+                // 1. 检查加载状态
+                if (document.readyState !== 'complete') return { status: 'loading' };
+                
+                // 2. 检查是否有实质内容 (Input/Table/Form)
+                const inputs = document.querySelectorAll('input, select, textarea');
+                if (inputs.length > 0) return { status: 'ready', count: inputs.length, type: 'input' };
+                
+                const table = document.querySelector('table, .el-table, .ant-table');
+                if (table) return { status: 'ready', count: 1, type: 'table' };
+                
+                // 3. 检查文本量 (排除空白页)
+                if (document.body.innerText.trim().length > 50) return { status: 'ready', count: 0, type: 'text' };
+                
+                return { status: 'empty' };
+            })();
+            """
+            
             try:
-                # 获取当前 Frame 的 URL 判定是否为业务关键 Frame
-                try:
-                    current_url = frame_obj.url or ""
-                except:
-                    current_url = ""
+                # 动态轮询
+                for i in range(10): # 最多轮询 10 次
+                    res = frame_obj.run_js(probe_js)
+                    if isinstance(res, dict) and res.get('status') == 'ready':
+                        is_ready = True
+                        if i > 1: # 如果等待了才加载出来，打印一下
+                            print(f"      ⏳ Iframe 内容就绪 (等待 {time.time()-start_wait:.1f}s): 发现 {res.get('type')}")
+                        break
                     
-                is_business_frame = any(kw in current_url.lower() for kw in [
-                    'ifarmedj', 'tps-local', 'trade', 'record', 'invoice', 'form', 'entry'
-                ])
-                
-                # 策略: 业务 Frame 多给点耐心，普通 Frame 快速略过
-                max_retries = 5 if is_business_frame else 1
-                poll_interval = 1.0 if is_business_frame else 0.2
-                
-                found_elements = []
-                stable_count = 0
-                last_count = -1
-                
-                for i in range(max_retries):
-                    # 在 frame 对象上执行 JS
-                    js_result = frame_obj.run_js(SmartFormAnalyzer.get_analysis_js())
-                    
-                    # 处理 Loading
-                    if isinstance(js_result, dict) and js_result.get('status') == 'loading':
-                        if is_business_frame: 
-                            time.sleep(poll_interval)
-                            continue
-                        else:
-                            break  # 普通 frame 加载中直接跳过
-                            
-                    # 获取结果
-                    current_batch = []
-                    if isinstance(js_result, dict) and 'elements' in js_result:
-                        current_batch = js_result['elements']
-                    elif isinstance(js_result, list):
-                        current_batch = js_result
+                    if time.time() - start_wait > max_wait_time:
+                        break
                         
-                    curr_count = len(current_batch)
-                    
-                    if curr_count > 0:
-                        if curr_count == last_count:
-                            stable_count += 1
-                        else:
-                            stable_count = 0
-                        
-                        last_count = curr_count
-                        
-                        # 只要有数据，且普通frame或业务frame稳定了，就采用
-                        if not is_business_frame or stable_count >= 1:
-                            found_elements = current_batch
-                            if is_business_frame:
-                                print(f"      ✅ [深度{depth}] 业务Frame捕获: {curr_count} 个元素")
-                            break
-                    
-                    if i < max_retries - 1:
-                        time.sleep(poll_interval)
+                    time.sleep(0.5 + (i * 0.2)) # 指数退避: 0.5, 0.7, 0.9...
+            
+            except Exception as e:
+                # 可能是跨域或 frame 销毁
+                pass
 
-                # 保存当前层结果
-                if found_elements:
+            # 2. 执行扫描 (如果 ready 或者 已经超时但可能部分加载)
+            try:
+                # 在 frame 对象上执行全量分析脚本
+                js_result = frame_obj.run_js(SmartFormAnalyzer.get_analysis_js())
+                
+                # 获取结果
+                found_elements = []
+                if isinstance(js_result, dict) and 'elements' in js_result:
+                    found_elements = js_result['elements']
+                elif isinstance(js_result, list):
+                    found_elements = js_result
+                    
+                curr_count = len(found_elements)
+                
+                if curr_count > 0:
+                    print(f"      ✅ [深度{depth}] Iframe 捕获: {curr_count} 个元素")
+                    
+                    # 保存当前层结果
                     for item in found_elements:
                         item['frame_path'] = f"{parent_path}"
                         item['in_iframe'] = True
@@ -380,55 +382,38 @@ class SmartFormAnalyzer:
                             pass
                             
             except Exception as e:
-                print(f"      ⚠️ Frame扫描异常: {e}")
+                pass # 静默失败，继续尝试子frame
 
-            # 2. 递归寻找子 Iframes
+            # 3. 递归寻找子 Iframes
             try:
-                # 在当前 frame 对象上查找子 iframe
                 child_iframes = frame_obj.eles('tag:iframe')
-                
-                if child_iframes and len(child_iframes) > 0:
-                    print(f"      ↳ [深度{depth}] 发现 {len(child_iframes)} 个子 Iframe，准备递归...")
-                    
+                if child_iframes:
                     for i, child_frame_ele in enumerate(child_iframes):
                         try:
-                            # 获取一些元数据用于日志
-                            src = child_frame_ele.attr('src') or ''
-                            
-                            # 过滤过小的 iframe
-                            try:
-                                rect = child_frame_ele.rect
-                                if rect.get('width', 0) < 50 or rect.get('height', 0) < 50:
-                                    continue
-                            except:
-                                pass
-                            
-                            # 使用 DrissionPage 的 get_frame() 获取 ChromiumFrame 对象
+                            # 过滤不可见或过小的 iframe (广告/像素点)
+                            rect = child_frame_ele.rect
+                            if rect.size[0] < 50 or rect.size[1] < 50:
+                                continue
+                                
                             child_frame_obj = frame_obj.get_frame(child_frame_ele)
-                            
                             if child_frame_obj:
-                                # 递归调用
                                 new_path = f"{parent_path}iframe[{i}]->" if parent_path else f"iframe[{i}]->"
                                 process_frame(child_frame_obj, depth + 1, new_path)
-                            
-                        except Exception as e:
-                            print(f"      ❌ 递归子Frame[{i}]失败: {e}")
-                            
-            except Exception as e:
-                # 可能是跨域 iframe
+                        except:
+                            pass
+            except:
                 pass
 
         # === 主入口 ===
         try:
-            print(f"\\n📦 开始递归 Iframe 扫描...")
+            print(f"\\n📦 开始递归 Iframe 扫描 (通用智能模式)...")
             
-            # 获取顶层 iframe 元素
             try:
                 top_iframe_elements = tab.eles('tag:iframe')
             except:
                 top_iframe_elements = []
             
-            if not top_iframe_elements or len(top_iframe_elements) == 0:
+            if not top_iframe_elements:
                 print("   未检测到 Iframe")
                 return []
 
@@ -436,24 +421,8 @@ class SmartFormAnalyzer:
             
             for i, frame_ele in enumerate(top_iframe_elements):
                 try:
-                    src = frame_ele.attr('src') or ''
-                    
-                    # 过滤过小的 iframe
-                    try:
-                        rect = frame_ele.rect
-                        if rect.get('width', 0) < 50 or rect.get('height', 0) < 50:
-                            continue
-                    except:
-                        pass
-                    
-                    is_business = any(kw in src.lower() for kw in [
-                        'ifarmedj', 'tps-local', 'trade', 'record', 'invoice', 'form', 'entry'
-                    ])
-                    
-                    frame_desc = src.split('?')[0].split('/')[-1][:30] if src else f'[{i}]'
-                    print(f"\\n   🔍 顶层 Iframe[{i}]: {frame_desc}{'  ⭐业务' if is_business else ''}")
-                    
-                    # 使用 DrissionPage 的 get_frame() 获取 ChromiumFrame 对象
+                    # 获取基本信息用于日志
+                    frame_desc = f"Iframe[{i}]"
                     frame_obj = tab.get_frame(frame_ele)
                     
                     if frame_obj:
@@ -464,7 +433,6 @@ class SmartFormAnalyzer:
                 except Exception as e:
                     print(f"   ⚠️ 顶层 Iframe[{i}] 无法进入: {e}")
                     
-            print(f"\\n🎯 Iframe 递归扫描完成，共获取 {len(all_iframe_fingerprints)} 个元素")
             return all_iframe_fingerprints
             
         except Exception as e:

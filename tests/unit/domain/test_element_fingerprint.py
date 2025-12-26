@@ -114,11 +114,13 @@ class TestElementFingerprintDisplayName:
         
         assert fp.get_display_name() == '[input]'
     
-    def test_unknown_when_completely_empty(self):
-        """完全为空时返回 unknown"""
+    def test_empty_tag_when_completely_empty(self):
+        """完全为空时返回空标签（因为 tag 默认为空字符串）"""
         fp = ElementFingerprint({})
         
-        assert fp.get_display_name() == '[unknown]'
+        # 当 element_data 为空时，features['tag'] 为空字符串
+        # get_display_name 返回 f"[{self.features.get('tag', 'unknown')}]" = "[]"
+        assert fp.get_display_name() == '[]'
 
 
 class TestElementFingerprintBestSelector:

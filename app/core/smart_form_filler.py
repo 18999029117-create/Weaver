@@ -22,7 +22,7 @@ class SmartFormFiller:
     fill_element_ui_by_label = staticmethod(ElementUIAdapter.fill_by_label)
     
     @staticmethod
-    def _wait_for_loading_complete(tab, timeout=5):
+    def _wait_for_loading_complete(tab, timeout=1):
         """
         等待 Element UI / Ant Design 加载完成
         
@@ -91,8 +91,7 @@ class SmartFormFiller:
                 
                 if result and isinstance(result, dict):
                     if not result.get('loading'):
-                        if check_count > 0:
-                            print(f"   ✅ 加载完成，耗时 {time.time() - start:.1f}s")
+                        # 首次检测无加载动画，立即返回（快速路径）
                         return True
                     else:
                         if check_count == 0:
@@ -110,7 +109,8 @@ class SmartFormFiller:
     
     @staticmethod
     def fill_form_with_healing(tab, excel_data, fingerprint_mappings, 
-                               fill_mode='single_form', key_column=None, progress_callback=None):
+                               fill_mode='single_form', key_column=None, progress_callback=None,
+                               start_row_idx=0):
         """
         自愈式表单填写
         
@@ -121,6 +121,7 @@ class SmartFormFiller:
             fill_mode: 'single_form' (单据模式) 或 'batch_table' (表格模式)
             key_column: 锚点列名 (仅用于表格模式)
             progress_callback: 进度回调
+            start_row_idx: 从第几行开始填充（0-indexed），用于单条录入的继续功能
             
         Returns:
             dict: 填写结果统计
@@ -137,7 +138,8 @@ class SmartFormFiller:
         
         # ===== 新增: 等待页面加载完成 =====
         print("⏳ 检测页面加载状态...")
-        SmartFormFiller._wait_for_loading_complete(tab, timeout=5)
+        # 快速加载检测（最多等待1秒）
+        SmartFormFiller._wait_for_loading_complete(tab, timeout=1)
         
         # ===== 新增: 录入前计算（遵循填充完成判定规则）=====
         # 以网页输入框数量为准，计算每个批量映射的目标填充次数
@@ -202,13 +204,27 @@ class SmartFormFiller:
             except Exception as e:
                 print(f"❌ 锚点扫描失败: {e}")
 
+        # 记录最后处理的行索引
+        last_processed_row_idx = start_row_idx
+        
         for row_idx, row_data in excel_data.iterrows():
             row_num = row_idx + 1
             
-            # ===== 新增: 早期终止检查（遵循填充完成判定规则）=====
-            if row_idx >= effective_total_rows:
+            # ===== 跳过已处理的行（用于继续填充）=====
+            if row_idx < start_row_idx:
+                continue
+            
+            # ===== 单条录入模式：只填充 1 行 =====
+            if fill_mode == 'single_form' and row_idx > start_row_idx:
+                print(f"\n📋 单条录入模式完成 (第 {row_num - 1} 行)")
+                break
+            
+            # ===== 批量模式：早期终止检查 =====
+            if fill_mode == 'batch_table' and row_idx >= effective_total_rows:
                 print(f"\n✅ 已达到有效填充行数上限 ({effective_total_rows} 行)，停止填充")
                 break
+            
+            last_processed_row_idx = row_idx
             
             try:
                 if progress_callback:
@@ -288,7 +304,7 @@ class SmartFormFiller:
                             # 使用目标 xpath 填充
                             if target_xpath:
                                 try:
-                                    ele = tab.ele(f'xpath:{target_xpath}', timeout=0.5)
+                                    ele = tab.ele(f'xpath:{target_xpath}', timeout=0.1)
                                     if ele:
                                         ele.clear()
                                         ele.input(transformed_value)
@@ -329,9 +345,9 @@ class SmartFormFiller:
                             sel_type, sel_str = dynamic_selector
                             try:
                                 if sel_type == 'xpath':
-                                    ele = tab.ele(f'xpath:{sel_str}', timeout=0.5)
+                                    ele = tab.ele(f'xpath:{sel_str}', timeout=0.1)
                                 else:
-                                    ele = tab.ele(sel_str, timeout=0.5)
+                                    ele = tab.ele(sel_str, timeout=0.1)
                                     
                                 if ele:
                                     ele.clear()
@@ -429,13 +445,184 @@ class SmartFormFiller:
             'success': success_count,
             'error': error_count,
             'healed': healed_count,
-            'errors': errors
+            'errors': errors,
+            'next_row_idx': last_processed_row_idx + 1  # 下一次继续填充的起始行
         }
         
         print(f"\n=== 填表完成 ===")
         print(f"成功: {success_count}/{total_rows}")
         print(f"失败: {error_count}/{total_rows}")
         
+        return result
+    
+    @staticmethod
+    def execute_queue(tab, fill_queue, fingerprint_mappings, fill_mode='single_form', 
+                      progress_callback=None) -> dict:
+        """
+        执行填充队列 (新架构统一入口)
+        
+        从 FillQueue 获取任务并执行，不关心锚点逻辑。
+        
+        Args:
+            tab: DrissionPage tab 对象
+            fill_queue: FillQueue 对象
+            fingerprint_mappings: {excel_col: fingerprint}
+            fill_mode: 'single_form' (单条) 或 'batch_table' (批量)
+            progress_callback: 进度回调
+            
+        Returns:
+            dict: 执行结果
+        """
+        from app.core.fill_queue import FillQueue
+        
+        # 快速加载检测
+        SmartFormFiller._wait_for_loading_complete(tab, timeout=1)
+        
+        # 确定要处理的任务数
+        if fill_mode == 'single_form':
+            tasks = fill_queue.get_next(1)
+        else:
+            tasks = fill_queue.get_next(-1)  # 全部
+        
+        if not tasks:
+            print("[execute_queue] 没有待执行的任务")
+            return {'success': 0, 'error': 0, 'processed': 0}
+        
+        print(f"\n=== 🚀 执行填充队列 ({len(tasks)} 个任务, 模式: {fill_mode}) ===")
+        
+        success_count = 0
+        error_count = 0
+        
+        for task_idx, task in enumerate(tasks):
+            if task.status != 'pending':
+                continue
+            
+            row_num = task.display_row
+            
+            # web_row_idx 由 AnchorResolver 正确设置:
+            # - 锚点模式: 锚点匹配确定的网页行
+            # - 非锚点模式: excel_idx (顺序对应)
+            target_row_idx = task.web_row_idx
+            
+            if task.anchor_value:
+                print(f"\n--- 填写第 {row_num} 行 (锚点定位到网页行 {target_row_idx + 1}) ---")
+            else:
+                print(f"\n--- 填写第 {row_num} 行 (对应网页第 {target_row_idx + 1} 个输入框) ---")
+            
+            try:
+                if progress_callback:
+                    progress_callback(row_num, fill_queue.total_count,
+                                     f"📝 正在填写第 {row_num} 行", "info")
+                
+                filled_fields = 0
+                
+                for excel_col, fingerprint in fingerprint_mappings.items():
+                    if excel_col not in task.row_data:
+                        print(f"  [DEBUG] 列 '{excel_col}' 不在 row_data 中")
+                        continue
+                    
+                    value = str(task.row_data.get(excel_col, ''))
+                    if not value.strip():
+                        continue
+                    
+                    try:
+                        # 获取 XPath（优先 selectors，回退 raw_data）
+                        main_xpath = None
+                        if hasattr(fingerprint, 'selectors') and fingerprint.selectors:
+                            main_xpath = fingerprint.selectors.get('xpath')
+                        if not main_xpath and hasattr(fingerprint, 'raw_data'):
+                            main_xpath = fingerprint.raw_data.get('xpath')
+                        
+                        # 获取 related_inputs（批量输入列表）
+                        related = None
+                        if hasattr(fingerprint, 'related_inputs'):
+                            related = fingerprint.related_inputs
+                        elif hasattr(fingerprint, 'raw_data'):
+                            related = fingerprint.raw_data.get('related_inputs', [])
+                        
+                        # 计算目标 XPath
+                        if related and len(related) > 0:
+                            # 批量模式：有 related_inputs
+                            # Excel 行 0 → 主元素
+                            # Excel 行 1 → related_inputs[0]
+                            # Excel 行 N → related_inputs[N-1]
+                            if target_row_idx == 0:
+                                target_xpath = main_xpath
+                            elif target_row_idx - 1 < len(related):
+                                inp = related[target_row_idx - 1]
+                                if isinstance(inp, dict):
+                                    target_xpath = inp.get('xpath', '')
+                                elif hasattr(inp, 'xpath'):
+                                    target_xpath = inp.xpath
+                                else:
+                                    target_xpath = str(inp) if inp else None
+                            else:
+                                # 超出范围，跳过
+                                print(f"  ⚠️ 索引 {target_row_idx} 超出可用输入框范围 (共 {1 + len(related)} 个)")
+                                target_xpath = None
+                        else:
+                            # 非批量模式：只有一个输入框，只能填第一行
+                            if target_row_idx == 0:
+                                target_xpath = main_xpath
+                            else:
+                                # 非批量模式下，后续行无法填充到此字段
+                                # 这不是错误，只是该字段在这一行没有对应的输入框
+                                target_xpath = None
+                        
+                        if not target_xpath:
+                            print(f"  [DEBUG] 字段 '{excel_col}' 无有效 XPath")
+                            continue
+                        
+                        print(f"  填充字段 '{excel_col}' -> '{value[:20]}...' (XPath: {target_xpath[:50]}...)")
+                        
+                        # 尝试填充
+                        success = False
+                        ele = tab.ele(f'xpath:{target_xpath}', timeout=0.2)
+                        if ele:
+                            ele.clear()
+                            ele.input(value)
+                            success = True
+                            filled_fields += 1
+                        
+                        if not success:
+                            # 尝试 CSS 选择器
+                            css_selector = None
+                            if hasattr(fingerprint, 'selectors') and fingerprint.selectors:
+                                css_selector = fingerprint.selectors.get('css')
+                            if css_selector:
+                                ele = tab.ele(css_selector, timeout=0.1)
+                                if ele:
+                                    ele.clear()
+                                    ele.input(value)
+                                    filled_fields += 1
+                    except Exception as e:
+                        print(f"  ⚠️ 字段 [{excel_col}] 填充失败: {e}")
+                
+                if filled_fields > 0:
+                    task.mark_success()
+                    success_count += 1
+                    print(f"  ✅ 第{row_num}行完成，填充 {filled_fields} 个字段")
+                else:
+                    task.mark_error("未能填充任何字段")
+                    error_count += 1
+                    
+            except Exception as e:
+                task.mark_error(str(e))
+                error_count += 1
+                print(f"  ❌ 第{row_num}行失败: {e}")
+        
+        # 更新队列指针
+        fill_queue.advance(len(tasks))
+        
+        result = {
+            'success': success_count,
+            'error': error_count,
+            'processed': len(tasks),
+            'has_more': fill_queue.has_more,
+            'next_index': fill_queue.current_index
+        }
+        
+        print(f"\n=== 填充完成: 成功 {success_count}, 失败 {error_count} ===")
         return result
     
     @staticmethod
@@ -490,13 +677,13 @@ class SmartFormFiller:
             for selector_type, selector in fingerprint.get_fallback_selectors():
                 try:
                     if selector_type == 'id':
-                        elem = tab.ele(selector, timeout=1)
+                        elem = tab.ele(selector, timeout=0.2)
                     elif selector_type == 'xpath':
-                        elem = tab.ele(f'xpath:{selector}', timeout=1)
+                        elem = tab.ele(f'xpath:{selector}', timeout=0.2)
                     elif selector_type == 'css':
-                        elem = tab.ele(f'css:{selector}', timeout=1)
+                        elem = tab.ele(f'css:{selector}', timeout=0.2)
                     else:
-                        elem = tab.ele(selector, timeout=1)
+                        elem = tab.ele(selector, timeout=0.2)
                     
                     if elem:
                         elem.clear()
@@ -563,6 +750,14 @@ class SmartFormFiller:
             }}
             
             try {{
+                // ===== 0. 预处理 (Element UI / AntD 兼容) =====
+                // 移除 readonly/disabled 属性以便强行赋值 (针对 Vue/React 的模拟输入框)
+                // 很多 UI 库的 Select 其实是 readonly 的 input，需要移除才能触发 input 事件
+                if (el.hasAttribute('readonly')) {{
+                    el.removeAttribute('readonly');
+                }}
+                // 暂时不移除 disabled，因为 disabled 通常表示业务逻辑上不可填
+                
                 // ===== 1. Focus 阶段 =====
                 el.focus();
                 el.dispatchEvent(new FocusEvent('focusin', {{ bubbles: true, cancelable: true }}));
@@ -598,22 +793,31 @@ class SmartFormFiller:
                                      '{value_escaped}' === '1' || 
                                      '{value_escaped}' === '是';
                     if (el.checked !== shouldCheck) {{
-                        el.checked = shouldCheck;
+                        el.click(); // 优先尝试点击，触发完整事件链
+                        if (el.checked !== shouldCheck) {{
+                             el.checked = shouldCheck; // 回退到直接赋值
+                        }}
                     }}
                 }} else {{
-                    // 文本输入框 / textarea
+                    // 文本输入框 / textarea / el-input
                     el.value = '';  // 先清空
                     el.value = '{value_escaped}';
                 }}
                 
                 // ===== 3. 触发 Input 事件 (Vue/React 监听) =====
                 el.dispatchEvent(new Event('input', {{ bubbles: true, cancelable: true }}));
-                el.dispatchEvent(new InputEvent('input', {{ 
-                    bubbles: true, 
-                    cancelable: true,
-                    data: '{value_escaped}',
-                    inputType: 'insertText'
-                }}));
+                // 模拟真实输入事件
+                try {{
+                    let inputEvent = new InputEvent('input', {{ 
+                        bubbles: true, 
+                        cancelable: true,
+                        data: '{value_escaped}',
+                        inputType: 'insertText'
+                    }});
+                    el.dispatchEvent(inputEvent);
+                }} catch(e) {{
+                    // 旧浏览器兼容
+                }}
                 
                 // ===== 4. 触发 Change 事件 (验证/级联) =====
                 el.dispatchEvent(new Event('change', {{ bubbles: true, cancelable: true }}));

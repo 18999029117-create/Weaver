@@ -496,19 +496,108 @@
     // ============================================================
 
     /**
-     * 批量闪烁元素
+     * 批量闪烁元素 - 使用包围框模式（性能优化版）
+     * 
+     * 不再逐个闪烁 100 个元素，而是计算所有元素的包围框，
+     * 创建一个覆盖整个区域的闪烁框，更清晰且性能更好。
+     * 
      * @param {string[]} xpaths - XPath 数组
      */
     window.weaver_flash_elements = function (xpaths) {
+        if (!xpaths || xpaths.length === 0) return;
+
+        // 收集所有元素的边界
+        let minX = Infinity, minY = Infinity;
+        let maxX = -Infinity, maxY = -Infinity;
+        let foundCount = 0;
+
         xpaths.forEach(xpath => {
             try {
                 const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
                 const el = result.singleNodeValue;
-                if (el) flashElement(el);
+                if (el) {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        minX = Math.min(minX, rect.left);
+                        minY = Math.min(minY, rect.top);
+                        maxX = Math.max(maxX, rect.right);
+                        maxY = Math.max(maxY, rect.bottom);
+                        foundCount++;
+                    }
+                }
             } catch (err) {
-                console.warn('[Weaver] Flash failed for:', xpath, err);
+                // 忽略无效的 XPath
             }
         });
+
+        // 如果没有找到任何元素，退出
+        if (foundCount === 0) return;
+
+        // 添加一些内边距
+        const padding = 4;
+        minX = Math.max(0, minX - padding);
+        minY = Math.max(0, minY - padding);
+        maxX = Math.min(window.innerWidth, maxX + padding);
+        maxY = Math.min(window.innerHeight, maxY + padding);
+
+        // 创建包围框覆盖层
+        const overlayId = 'weaver-bounding-flash';
+        let overlay = document.getElementById(overlayId);
+
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = overlayId;
+            overlay.style.cssText = `
+                position: fixed;
+                pointer-events: none;
+                z-index: 999998;
+                border: 3px solid #000000;
+                border-radius: 4px;
+                background: rgba(0, 0, 0, 0.08);
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+                transition: opacity 0.15s ease;
+            `;
+            document.body.appendChild(overlay);
+        }
+
+        // 设置位置和大小
+        overlay.style.left = minX + 'px';
+        overlay.style.top = minY + 'px';
+        overlay.style.width = (maxX - minX) + 'px';
+        overlay.style.height = (maxY - minY) + 'px';
+        overlay.style.opacity = '1';
+
+        // 显示数量提示（如果超过 1 个元素）
+        if (foundCount > 1) {
+            overlay.innerHTML = `<span style="
+                position: absolute;
+                top: -24px;
+                left: 0;
+                background: #000;
+                color: #fff;
+                padding: 2px 8px;
+                border-radius: 4px;
+                font-size: 12px;
+                font-family: sans-serif;
+            ">📦 ${foundCount} 个输入框</span>`;
+        } else {
+            overlay.innerHTML = '';
+        }
+
+        // 闪烁 3 次后隐藏
+        let flashCount = 0;
+        const flashInterval = setInterval(() => {
+            flashCount++;
+            overlay.style.opacity = (flashCount % 2 === 0) ? '1' : '0.3';
+
+            if (flashCount >= 6) { // 3 次闪烁 = 6 次切换
+                clearInterval(flashInterval);
+                overlay.style.opacity = '0';
+                setTimeout(() => {
+                    overlay.innerHTML = '';
+                }, 200);
+            }
+        }, 150);
     };
 
     /**

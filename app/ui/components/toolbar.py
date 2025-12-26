@@ -120,11 +120,8 @@ class ProcessToolbar(ctk.CTkFrame):
         # 锚定规则
         ctk.CTkLabel(row, text="锚定规则:", font=(UIStyles.FONT_FAMILY, 12),
                     text_color=ThemeColors.TEXT_SECONDARY).pack(side="left", padx=(5, 2))
-        anchor_values = ["按顺序录入"] + self.excel_columns
-        self.anchor_selector = self._create_dropdown(row, anchor_values, self.anchor_var)
-        self.anchor_selector.pack(side="left", padx=2)
         
-        # 多重锚定配置按钮
+        # 多重锚定配置按钮（紧贴标签）
         self.anchor_config_btn = AnimatedButton(
             row, text="🔗配置", width=60, height=30,
             command=self.callbacks.get('on_anchor_config')

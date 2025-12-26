@@ -10,6 +10,7 @@ from app.core.launcher import BrowserLauncher
 from app.core.browser import BrowserManager
 from app.core.excel import ExcelManager
 from app.ui.process_window import ProcessWindow
+from app.ui.dialogs.header_select_dialog import HeaderSelectDialog
 
 class AutoFillerUI(ctk.CTk):
     def __init__(self):
@@ -200,11 +201,41 @@ class AutoFillerUI(ctk.CTk):
             self.add_log(f"❌ 探测同步失败: {str(e)}", "error")
 
     def action_browse_file(self):
-        f = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
-        if f:
-            self.excel_path.set(f)
-            self.excel_label.configure(text=os.path.basename(f))
-            self.add_log(f"✅ Excel 数据已加载: {os.path.basename(f)}")
+        """选择 Excel 文件并智能检测表头"""
+        f = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx *.xls")])
+        if not f:
+            return
+        
+        self.excel_path.set(f)
+        self.excel_label.configure(text=os.path.basename(f))
+        self.add_log(f"📁 正在分析 Excel 文件: {os.path.basename(f)}")
+        
+        # 检测表头
+        detected_row, confidence = self.excel_mgr.detect_header(f)
+        
+        if confidence >= 70:
+            # 置信度高，直接使用
+            self.add_log(f"✅ 自动识别表头: 第 {detected_row + 1} 行 (置信度: {confidence:.0f}%)")
+            self._selected_header_row = detected_row
+        else:
+            # 置信度低，弹出对话框让用户确认
+            self.add_log(f"⚠️ 表头位置不确定 (置信度: {confidence:.0f}%)，请手动确认")
+            preview_data = self.excel_mgr.get_raw_preview(f, rows=10)
+            
+            def on_header_confirm(row_idx):
+                self._selected_header_row = row_idx
+                self.add_log(f"✅ 用户确认表头: 第 {row_idx + 1} 行")
+            
+            HeaderSelectDialog(
+                self,
+                preview_data=preview_data,
+                detected_row=detected_row,
+                confidence=confidence,
+                on_confirm=on_header_confirm
+            )
+            self._selected_header_row = detected_row  # 默认使用检测结果
+        
+        self.add_log(f"✅ Excel 文件已就绪: {os.path.basename(f)}")
 
     def action_start_task(self):
         if not self.excel_path.get() or not self.selected_tab.get():
@@ -221,51 +252,31 @@ class AutoFillerUI(ctk.CTk):
             try:
                 import time as t
                 
-                # 步骤1: 加载 Excel 数据
+                # 步骤1: 加载 Excel 数据（使用已选择的表头行）
                 self._update_progress(0.1, "📊 正在读取Excel文件...")
-                t.sleep(0.2)
-                df = self.excel_mgr.load_excel(self.excel_path.get())
-                self._update_progress(0.15, f"📊 已加载 {len(df)} 行, {len(df.columns)} 列数据")
-                self.add_log(f"📊 Excel数据: {len(df)} 行 × {len(df.columns)} 列")
-                t.sleep(0.3)
+                header_row = getattr(self, '_selected_header_row', None)
+                df = self.excel_mgr.load_excel(self.excel_path.get(), header_row=header_row)
+                self._update_progress(0.2, f"📊 已加载 {len(df)} 行, {len(df.columns)} 列数据")
+                self.add_log(f"📊 Excel数据: {len(df)} 行 × {len(df.columns)} 列 (表头第{self.excel_mgr.header_row + 1}行)")
                 
                 # 步骤2: 连接浏览器
-                self._update_progress(0.25, "🌐 正在连接目标页面...")
+                self._update_progress(0.3, "🌐 正在连接目标页面...")
                 tab_id = next(t_item['id'] for t_item in self.browser_tabs_data if t_item['title'] == self.selected_tab.get())
-                t.sleep(0.2)
-                self._update_progress(0.3, "🌐 浏览器连接成功")
+                self._update_progress(0.4, "🌐 浏览器连接成功")
                 self.add_log("🌐 已连接到目标页面")
-                t.sleep(0.2)
                 
-                # 步骤3: 扫描网页元素
-                self._update_progress(0.4, "🔍 正在深度扫描网页元素...")
+                # 步骤3: 扫描网页元素（实际耗时操作，无需额外sleep）
+                self._update_progress(0.5, "🔍 正在深度扫描网页元素...")
                 self.add_log("🔍 启动深度扫描...")
-                t.sleep(0.3)
-                self._update_progress(0.5, "🔍 正在分析表单结构...")
-                t.sleep(0.3)
-                self._update_progress(0.6, "🔍 正在提取交互元素...")
-                t.sleep(0.3)
                 
-                # 步骤4: 智能匹配
-                self._update_progress(0.7, "🎯 正在执行智能字段匹配...")
-                self.add_log("🎯 启动智能匹配引擎")
-                t.sleep(0.3)
-                self._update_progress(0.8, "🎯 正在计算匹配度评分...")
-                t.sleep(0.2)
+                # 步骤4: 初始化工作台
+                self._update_progress(0.8, "🛠️ 正在构建映射画布...")
                 
-                # 步骤5: 初始化工作台
-                self._update_progress(0.9, "🛠️ 正在构建映射画布...")
-                t.sleep(0.2)
-                
-                # 步骤6: 打开工作台并排列窗口
-                self._update_progress(0.95, "📐 正在调整窗口布局...")
+                # 步骤5: 打开工作台并排列窗口
+                self._update_progress(0.9, "📐 正在调整窗口布局...")
                 process_win = ProcessWindow(self, df, tab_id, self.browser_mgr)
                 
-                # 排列窗口：软件40%左侧，浏览器60%右侧
-                self._arrange_windows(process_win)
-                
                 self._update_progress(1.0, "✅ 初始化完成！")
-                t.sleep(0.3)
                 
                 # 隐藏进度条
                 self._hide_progress()
@@ -292,49 +303,3 @@ class AutoFillerUI(ctk.CTk):
         self.progress_label.pack_forget()
         self.progress_bar.set(0)
         self.start_btn.configure(state="normal", text="🚀 启动智能编织任务")
-    
-    def _arrange_windows(self, process_win):
-        """排列窗口：工作台40%左侧，浏览器60%右侧"""
-        try:
-            # 获取屏幕尺寸
-            screen_width = self.winfo_screenwidth()
-            screen_height = self.winfo_screenheight()
-            
-            # 计算窗口尺寸
-            app_width = int(screen_width * 0.4)
-            browser_width = int(screen_width * 0.6)
-            window_height = screen_height - 80  # 留出任务栏空间
-            
-            # 设置工作台位置（左侧40%）
-            process_win.geometry(f"{app_width}x{window_height}+0+0")
-            process_win.update()
-            
-            # 设置浏览器位置（右侧60%）
-            try:
-                # 使用 pyautogui 或直接操作浏览器窗口
-                import subprocess
-                # Windows下使用PowerShell调整浏览器窗口
-                ps_script = f'''
-                Add-Type @"
-                using System;
-                using System.Runtime.InteropServices;
-                public class Win32 {{
-                    [DllImport("user32.dll")]
-                    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-                    [DllImport("user32.dll")]
-                    public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
-                }}
-"@
-                $chrome = Get-Process chrome -ErrorAction SilentlyContinue | Where-Object {{$_.MainWindowHandle -ne 0}} | Select-Object -First 1
-                if ($chrome) {{
-                    [Win32]::SetWindowPos($chrome.MainWindowHandle, [IntPtr]::Zero, {app_width}, 0, {browser_width}, {window_height}, 0x0040)
-                }}
-                '''
-                subprocess.run(["powershell", "-Command", ps_script], capture_output=True, timeout=3)
-            except:
-                pass  # 如果无法调整浏览器窗口，忽略错误
-                
-            self.add_log(f"📐 窗口已排列：工作台 {app_width}px | 浏览器 {browser_width}px")
-            
-        except Exception as e:
-            self.add_log(f"⚠️ 窗口排列失败: {e}")

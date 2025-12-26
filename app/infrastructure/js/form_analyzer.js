@@ -24,7 +24,7 @@ function scanPage() {
             window.confirm = (msg) => { console.log('[Weaver] Confirm auto-approved:', msg); return true; };
             window.prompt = (msg, def) => { console.log('[Weaver] Prompt auto-filled:', msg); return def || ''; };
         }
-        
+
         // ===== 加载状态探测 =====
         function detectLoading() {
             const loaderSelectors = [
@@ -42,7 +42,7 @@ function scanPage() {
                 '[class*="spinner"]:not(input)',
                 '.skeleton', '.placeholder'     // 骨架屏
             ];
-            
+
             for (let sel of loaderSelectors) {
                 try {
                     let loader = document.querySelector(sel);
@@ -53,25 +53,25 @@ function scanPage() {
                             return { status: 'loading', loader: sel };
                         }
                     }
-                } catch(e) {}
+                } catch (e) { }
             }
-            
+
             // 检查 document.readyState
             if (document.readyState !== 'complete') {
                 return { status: 'loading', loader: 'document.readyState=' + document.readyState };
             }
-            
+
             return { status: 'ready' };
         }
-        
+
         // 执行加载检测
         const loadStatus = detectLoading();
         if (loadStatus.status === 'loading') {
             return { status: 'loading', loader: loadStatus.loader, elements: [] };
         }
-        
+
         const results = [];
-        
+
         // ===== 配置 =====
         const INPUT_SELECTORS = [
             'input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="file"])',
@@ -82,7 +82,7 @@ function scanPage() {
             '[role="combobox"]',
             '[role="spinbutton"]'
         ].join(',');
-        
+
         // Autocomplete 下拉选项选择器
         const AUTOCOMPLETE_SELECTORS = [
             '.dropdown.show .dropdown-item',           // 通用下拉框
@@ -99,32 +99,56 @@ function scanPage() {
             'ul.ui-autocomplete li',                   // jQuery UI
             'datalist option'                          // HTML5 datalist
         ].join(',');
-        
+
         // ===== 辅助函数 =====
-        
+
+        // 检测 ID 是否稳定 (通用性增强)
+        function isStableId(id) {
+            if (!id || typeof id !== 'string') return false;
+
+            // 1. 过滤已知的框架动态 ID 前缀
+            if (id.match(/^(el-id-|v-|input-|vue-|react-|ng-|ember-|ui-id-|ext-gen)/i)) return false;
+
+            // 2. 过滤包含长数字串的 ID (可能是时间戳或随机数)
+            if (id.match(/\d{5,}/)) return false;
+
+            // 3. 过滤 UUID 风格的 ID
+            if (id.match(/-[a-f0-9]{4}-/i)) return false;
+
+            // 4. 过滤过长 ID (通常是自动生成的)
+            if (id.length > 50) return false;
+
+            return true;
+        }
+
         // ===== 政府级 Vue.js 站点专用: 语义化 XPath 生成 =====
-        // 禁止使用 ID 选择器（因为 ID 包含随机哈希如 data-v-xxxx）
-        // 改用基于标签文本的相对定位
+        // 禁止使用不稳定的 ID 选择器
         function getXPath(element) {
             if (!element) return '';
+
+            // 优先使用稳定 ID
+            if (isStableId(element.id)) {
+                return `//*[@id="${element.id}"]`;
+            }
+
             if (element === document.body) {
                 return '/html/body';
             }
-            
+
             // ===== 策略1: 基于 aria-label 的 XPath（最稳定） =====
             const ariaLabel = element.getAttribute('aria-label');
             if (ariaLabel) {
                 const tag = element.tagName.toLowerCase();
                 return `//${tag}[@aria-label="${ariaLabel}"]`;
             }
-            
+
             // ===== 策略2: 基于 placeholder 的 XPath =====
             const placeholder = element.placeholder;
             if (placeholder) {
                 const tag = element.tagName.toLowerCase();
                 return `//${tag}[@placeholder="${placeholder}"]`;
             }
-            
+
             // ===== 策略3: 基于关联 Label 文本的相对 XPath =====
             // 查找 "包含文本 X 的 label 的兄弟/后代 input"
             const labelText = getLabelTextForXPath(element);
@@ -134,7 +158,7 @@ function scanPage() {
                 // 或：//*[contains(text(),'姓名')]/ancestor::*[contains(@class,'form-item')]//input
                 return `//*[contains(text(),"${labelText}")]/ancestor::*[contains(@class,"form-item") or contains(@class,"el-form-item")]//descendant::${tag}`;
             }
-            
+
             // ===== 策略4: 基于表格列头的 XPath（表格场景） =====
             const tableCell = element.closest('td');
             if (tableCell) {
@@ -148,22 +172,33 @@ function scanPage() {
                     return `//table//tr[${rowIndex}]/td[${colIndex}]//${tag}`;
                 }
             }
-            
-            // ===== 策略5: Element UI 表格专用 =====
-            const elTableRow = element.closest('.el-table__row');
+
+            // ===== 策略5: Element UI / Ant Design 表格专用 =====
+            // 解决 Element UI 表头与表体分离、虚拟滚动等问题
+            const elTableRow = element.closest('.el-table__row, .ant-table-row');
             if (elTableRow) {
-                const rows = Array.from(document.querySelectorAll('.el-table__row'));
-                const rowIndex = rows.indexOf(elTableRow) + 1;
-                const cells = elTableRow.querySelectorAll('.el-table__cell, td');
-                let colIndex = 0;
-                for (let cell of cells) {
-                    colIndex++;
-                    if (cell.contains(element)) break;
+                // 寻找表格容器
+                const tableWrapper = elTableRow.closest('.el-table__body-wrapper, .ant-table-tbody');
+                if (tableWrapper) {
+                    const rows = Array.from(tableWrapper.querySelectorAll('.el-table__row, .ant-table-row'));
+                    const rowIndex = rows.indexOf(elTableRow) + 1;
+
+                    // 寻找单元格索引
+                    const cells = elTableRow.querySelectorAll('.el-table__cell, td, .ant-table-cell');
+                    let colIndex = 0;
+                    for (let cell of cells) {
+                        colIndex++;
+                        if (cell.contains(element)) break;
+                    }
+
+                    const tag = element.tagName.toLowerCase();
+                    // 使用相对稳健的类名组合
+                    const rowClass = elTableRow.classList.contains('el-table__row') ? 'el-table__row' : 'ant-table-row';
+                    // 不使用 ID，而是使用语义化层级
+                    return `//*[contains(@class,"${rowClass}")][${rowIndex}]//td[${colIndex}]//${tag}`;
                 }
-                const tag = element.tagName.toLowerCase();
-                return `//*[contains(@class,"el-table__row")][${rowIndex}]//*[contains(@class,"el-table__cell")][${colIndex}]//${tag}`;
             }
-            
+
             // ===== 策略6: 回退 - 纯位置 XPath（不使用 ID）=====
             let ix = 0;
             const siblings = element.parentNode ? element.parentNode.childNodes : [];
@@ -180,7 +215,7 @@ function scanPage() {
             }
             return '';
         }
-        
+
         // 辅助函数：获取用于 XPath 的 Label 文本
         function getLabelTextForXPath(element) {
             // 检查 Element UI form-item
@@ -192,7 +227,7 @@ function scanPage() {
                     if (text.length > 0 && text.length < 20) return text;
                 }
             }
-            
+
             // 检查标准 label[for]
             if (element.id) {
                 const labelFor = document.querySelector(`label[for="${element.id}"]`);
@@ -201,27 +236,34 @@ function scanPage() {
                     if (text.length > 0 && text.length < 20) return text;
                 }
             }
-            
+
             return '';
         }
-        
+
         // 生成 CSS 选择器
         function getCSSSelector(element) {
             if (!element) return '';
-            if (element.id) {
+            if (isStableId(element.id)) {
                 return '#' + CSS.escape(element.id);
             }
-            
+
             const parts = [];
             while (element && element.nodeType === Node.ELEMENT_NODE) {
                 let selector = element.tagName.toLowerCase();
                 if (element.className && typeof element.className === 'string') {
-                    const classes = element.className.trim().split(/\s+/).filter(c => c && !c.match(/^(ng-|v-|_)/));
+                    // 过滤掉 Vue/Angular 随机属性类名 (data-v-xxx, ng-xxx) 以及纯样式类 (mt-10, p-5)
+                    const classes = element.className.trim().split(/\s+/).filter(c =>
+                        c &&
+                        !c.match(/^(ng-|v-|data-v-|_)/) &&
+                        !c.match(/^(mt-|mb-|ml-|mr-|pt-|pb-|pl-|pr-|p-|m-)\d+$/)
+                    );
                     if (classes.length > 0) {
-                        selector += '.' + classes.slice(0, 2).map(c => CSS.escape(c)).join('.');
+                        try {
+                            selector += '.' + classes.slice(0, 2).map(c => CSS.escape(c)).join('.');
+                        } catch (e) { }
                     }
                 }
-                
+
                 // 添加 nth-child 确保唯一性
                 const parent = element.parentNode;
                 if (parent) {
@@ -231,33 +273,33 @@ function scanPage() {
                         selector += ':nth-of-type(' + index + ')';
                     }
                 }
-                
+
                 parts.unshift(selector);
                 if (element.id || parts.length > 5) break;
                 element = element.parentNode;
             }
             return parts.join(' > ');
         }
-        
+
         // 获取视觉坐标附近的文本（左侧 / 上方 / 右侧，优先同容器）
         function getVisualLabel(element, rect) {
             if (!rect || rect.width === 0) return '';
-            
+
             const searchRadiusX = 250;  // 左侧搜索半径
             const searchRadiusY = 60;   // 上方搜索半径
             const searchRadiusR = 200;  // 右侧搜索半径
             const maxVerticalGap = 150; // 最大垂直距离（避免跨section）
             let bestLabel = '';
-            
+
             // 获取元素所在的容器（section/div/form）
             const elemContainer = element.closest('section, .space-y-6, form, [class*="card"], [class*="panel"]');
-            
+
             // 收集候选文本节点
             const walker = document.createTreeWalker(
                 document.body,
                 NodeFilter.SHOW_TEXT,
                 {
-                    acceptNode: function(node) {
+                    acceptNode: function (node) {
                         const text = node.textContent.trim();
                         // 过滤空文本和过长文本
                         if (!text || text.length > 50 || text.length < 1) {
@@ -267,32 +309,32 @@ function scanPage() {
                     }
                 }
             );
-            
+
             let textNode;
             const candidates = [];
-            
+
             while (textNode = walker.nextNode()) {
                 const range = document.createRange();
                 range.selectNodeContents(textNode);
                 const textRect = range.getBoundingClientRect();
-                
+
                 if (textRect.width === 0 || textRect.height === 0) continue;
-                
+
                 // 检查垂直距离是否超限（防止跨section匹配）
                 const verticalGap = Math.abs(textRect.top - rect.top);
                 if (verticalGap > maxVerticalGap) continue;
-                
+
                 // 计算文本中心点
                 const textCenterX = textRect.left + textRect.width / 2;
                 const textCenterY = textRect.top + textRect.height / 2;
-                
+
                 // 元素左侧中心点
                 const elemCenterY = rect.top + rect.height / 2;
-                
+
                 // 检查是否在同一容器内
                 const textContainer = textNode.parentElement?.closest('section, .space-y-6, form, [class*="card"], [class*="panel"]');
                 const sameContainer = (elemContainer && textContainer && elemContainer === textContainer);
-                
+
                 // 优先级1: 左侧文本 (在元素左边，且垂直位置接近)
                 if (textCenterX < rect.left && Math.abs(textCenterY - elemCenterY) < 30) {
                     const distance = rect.left - textRect.right;
@@ -305,7 +347,7 @@ function scanPage() {
                         });
                     }
                 }
-                
+
                 // 优先级2: 上方文本 (在元素上方，且水平位置接近)
                 if (textCenterY < rect.top && Math.abs(textCenterX - rect.left) < rect.width + 50) {
                     const distance = rect.top - textRect.bottom;
@@ -318,7 +360,7 @@ function scanPage() {
                         });
                     }
                 }
-                
+
                 // 优先级3: 右侧文本 (在元素右边，且垂直位置接近)
                 if (textCenterX > rect.right && Math.abs(textCenterY - elemCenterY) < 30) {
                     const distance = textRect.left - rect.right;
@@ -332,7 +374,7 @@ function scanPage() {
                     }
                 }
             }
-            
+
             // 按优先级和距离排序（同容器内的优先）
             candidates.sort((a, b) => {
                 // 先按同容器排序
@@ -344,14 +386,14 @@ function scanPage() {
                 // 最后按距离
                 return a.distance - b.distance;
             });
-            
+
             if (candidates.length > 0) {
                 bestLabel = candidates[0].text;
             }
-            
+
             return bestLabel;
         }
-        
+
         // 获取表格信息
         function getTableInfo(element) {
             const info = {
@@ -361,25 +403,25 @@ function scanPage() {
                 table_id: null,
                 header_text: ''
             };
-            
+
             // 向上查找 TD/TH
             let cell = element.closest('td, th');
             if (!cell) return info;
-            
+
             info.is_table_cell = true;
-            
+
             // 获取行
             const row = cell.closest('tr');
             if (row) {
                 info.row_index = row.rowIndex;
                 info.col_index = cell.cellIndex;
             }
-            
+
             // 获取表格标识
             const table = cell.closest('table');
             if (table) {
                 info.table_id = table.id || table.className || ('table_' + Array.from(document.querySelectorAll('table')).indexOf(table));
-                
+
                 // 尝试获取表头文字
                 if (info.col_index !== null) {
                     // 先找 thead
@@ -391,7 +433,7 @@ function scanPage() {
                             if (th) info.header_text = th.textContent.trim();
                         }
                     }
-                    
+
                     // 没有 thead，找第一行
                     if (!info.header_text) {
                         const firstRow = table.querySelector('tr');
@@ -404,10 +446,10 @@ function scanPage() {
                     }
                 }
             }
-            
+
             return info;
         }
-        
+
         // 获取关联的 Label 文本
         function getLabelText(element) {
             // 方法1: 通过 for 属性
@@ -416,7 +458,7 @@ function scanPage() {
                 const label = document.querySelector('label[for="' + CSS.escape(id) + '"]');
                 if (label) return label.textContent.trim();
             }
-            
+
             // 方法2: 包裹在 label 内
             const parentLabel = element.closest('label');
             if (parentLabel) {
@@ -426,24 +468,24 @@ function scanPage() {
                 inputs.forEach(i => i.remove());
                 return clone.textContent.trim();
             }
-            
+
             // 方法3: aria-label
             const ariaLabel = element.getAttribute('aria-label');
             if (ariaLabel) return ariaLabel;
-            
+
             // 方法4: aria-labelledby
             const labelledBy = element.getAttribute('aria-labelledby');
             if (labelledBy) {
                 const labelElem = document.getElementById(labelledBy);
                 if (labelElem) return labelElem.textContent.trim();
             }
-            
+
             // 方法5: 前一个相邻兄弟是 label（常见的表单布局模式）
             const prevSibling = element.previousElementSibling;
             if (prevSibling && prevSibling.tagName.toLowerCase() === 'label') {
                 return prevSibling.textContent.trim();
             }
-            
+
             // 方法6: 同一父 div 内的 label（常见的表单布局）
             const parent = element.parentElement;
             if (parent) {
@@ -453,10 +495,10 @@ function scanPage() {
                     return siblingLabel.textContent.trim();
                 }
             }
-            
+
             return '';
         }
-        
+
         // ===== Element UI / Ant Design 专用标签识别 =====
         function getElementUILabel(element) {
             // Element UI: el-form-item > .el-form-item__label
@@ -465,24 +507,24 @@ function scanPage() {
                 const elLabel = elFormItem.querySelector('.el-form-item__label');
                 if (elLabel) return elLabel.textContent.trim().replace(/[：:*]$/g, '');
             }
-            
+
             // Ant Design: .ant-form-item > .ant-form-item-label
             const antFormItem = element.closest('.ant-form-item');
             if (antFormItem) {
                 const antLabel = antFormItem.querySelector('.ant-form-item-label label, .ant-form-item-label');
                 if (antLabel) return antLabel.textContent.trim().replace(/[：:*]$/g, '');
             }
-            
+
             // iView/View UI
             const ivuFormItem = element.closest('.ivu-form-item');
             if (ivuFormItem) {
                 const ivuLabel = ivuFormItem.querySelector('.ivu-form-item-label');
                 if (ivuLabel) return ivuLabel.textContent.trim().replace(/[：:*]$/g, '');
             }
-            
+
             return '';
         }
-        
+
         // ===== 弹窗/对话框上下文检测 =====
         function getDialogContext(element) {
             // Element UI Dialog
@@ -491,28 +533,28 @@ function scanPage() {
                 const title = elDialog.querySelector('.el-dialog__title');
                 return title ? title.textContent.trim() : 'el-dialog';
             }
-            
+
             // Ant Design Modal
             const antModal = element.closest('.ant-modal');
             if (antModal) {
                 const title = antModal.querySelector('.ant-modal-title');
                 return title ? title.textContent.trim() : 'ant-modal';
             }
-            
+
             // Bootstrap/通用 Modal
             const modal = element.closest('.modal');
             if (modal) {
                 const title = modal.querySelector('.modal-title');
                 return title ? title.textContent.trim() : 'modal';
             }
-            
+
             return '';
         }
-        
+
         // ===== 主扫描逻辑 =====
         function scanElements(root, shadowDepth = 0) {
             const elements = root.querySelectorAll(INPUT_SELECTORS);
-            
+
             elements.forEach((el, idx) => {
                 try {
                     // 检查元素是否可见
@@ -520,10 +562,10 @@ function scanPage() {
                     if (style.display === 'none' || style.visibility === 'hidden') {
                         return;
                     }
-                    
+
                     // 获取坐标
                     const rect = el.getBoundingClientRect();
-                    
+
                     // 获取基础属性
                     const tagName = el.tagName.toLowerCase();
                     const inputType = el.type || tagName;
@@ -532,37 +574,37 @@ function scanPage() {
                     const className = el.className || '';
                     const placeholder = el.placeholder || '';
                     const value = el.value || '';
-                    
+
                     // 获取 Label
                     let labelText = getLabelText(el);
-                    
+
                     // 获取表格信息
                     const tableInfo = getTableInfo(el);
-                    
+
                     // 如果表格有表头，优先使用
                     if (tableInfo.header_text && !labelText) {
                         labelText = tableInfo.header_text;
                     }
-                    
-                    // 如果仍然没有 label，使用视觉坐标匹配
+
+                    // 如果仍然没有 label，且不是表格单元格（表格单元格通常依靠表头），使用视觉坐标匹配
                     let visualLabel = '';
-                    if (!labelText) {
+                    if (!labelText && !tableInfo.is_table_cell) {
                         visualLabel = getVisualLabel(el, rect);
                         if (visualLabel) {
                             labelText = visualLabel;
                         }
                     }
-                    
+
                     // 最终备选: placeholder -> name -> id
                     if (!labelText) {
                         labelText = placeholder || name || id || '';
                     }
-                    
+
                     // 获取 Element UI / Ant Design 标签
                     const elFormLabel = getElementUILabel(el);
                     const ariaLabelDirect = el.getAttribute('aria-label') || '';
                     const dialogContext = getDialogContext(el);
-                    
+
                     // 构造结果对象
                     const data = {
                         index: results.length,
@@ -573,22 +615,22 @@ function scanPage() {
                         className: typeof className === 'string' ? className : '',
                         placeholder: placeholder,
                         value: value,
-                        
+
                         // 选择器
-                        id_selector: id ? '#' + id : null,
+                        id_selector: isStableId(id) ? '#' + id : null,
                         xpath: getXPath(el),
                         css_selector: getCSSSelector(el),
-                        
+
                         // 语义标签（原有）
                         label_text: labelText,
                         visual_label: visualLabel,
                         nearby_text: labelText,
-                        
+
                         // 增强语义标签
                         aria_label: ariaLabelDirect,           // aria-label 直接值
                         el_form_label: elFormLabel,            // Element UI / Ant Design 表单标签
                         dialog_context: dialogContext,         // 弹窗上下文
-                        
+
                         // 坐标
                         rect: {
                             x: Math.round(rect.x),
@@ -596,31 +638,31 @@ function scanPage() {
                             width: Math.round(rect.width),
                             height: Math.round(rect.height)
                         },
-                        
+
                         // 表格信息
                         is_table_cell: tableInfo.is_table_cell,
                         row_index: tableInfo.row_index,
                         col_index: tableInfo.col_index,
                         table_id: tableInfo.table_id,
                         table_header: tableInfo.header_text,
-                        
+
                         // 状态
                         disabled: el.disabled || false,
                         readonly: el.readOnly || false,
                         required: el.required || false,
-                        
+
                         // Shadow DOM 标记
                         shadow_depth: shadowDepth
                     };
-                    
+
                     results.push(data);
-                    
+
                 } catch (e) {
                     // 单个元素失败不影响整体
                     console.warn('Element scan error:', e);
                 }
             });
-            
+
             // Shadow DOM 穿透 (至少2层深度)
             if (shadowDepth < 2) {
                 const allElements = root.querySelectorAll('*');
@@ -635,10 +677,10 @@ function scanPage() {
                 });
             }
         }
-        
+
         // 执行扫描
         scanElements(document);
-        
+
         // 扫描 Autocomplete 下拉选项
         function scanAutocompleteOptions() {
             const options = document.querySelectorAll(AUTOCOMPLETE_SELECTORS);
@@ -646,21 +688,21 @@ function scanPage() {
                 try {
                     const style = window.getComputedStyle(el);
                     if (style.display === 'none' || style.visibility === 'hidden') return;
-                    
+
                     const rect = el.getBoundingClientRect();
                     if (rect.width === 0 || rect.height === 0) return;
-                    
+
                     // 获取选项文本
                     const optionText = el.textContent.trim();
                     if (!optionText) return;
-                    
+
                     // 查找关联的输入框
                     const wrapper = el.closest('.autocomplete-wrapper, [role="combobox"], .el-autocomplete, .ant-select');
                     let associatedInput = null;
                     if (wrapper) {
                         associatedInput = wrapper.querySelector('input');
                     }
-                    
+
                     const data = {
                         index: results.length,
                         tagName: 'autocomplete-option',
@@ -668,16 +710,16 @@ function scanPage() {
                         name: '',
                         id: el.id || '',
                         className: typeof el.className === 'string' ? el.className : '',
-                        
+
                         // 选择器
                         xpath: getXPath(el),
                         css_selector: getCSSSelector(el),
-                        
+
                         // 语义信息
                         label_text: optionText,
                         option_text: optionText,
                         nearby_text: optionText,
-                        
+
                         // 坐标
                         rect: {
                             x: Math.round(rect.x),
@@ -685,23 +727,101 @@ function scanPage() {
                             width: Math.round(rect.width),
                             height: Math.round(rect.height)
                         },
-                        
+
                         // 标记为 Autocomplete 选项
                         is_autocomplete_option: true,
                         associated_input: associatedInput ? getXPath(associatedInput) : null
                     };
-                    
+
                     results.push(data);
                 } catch (e) {
                     console.warn('Autocomplete option scan error:', e);
                 }
             });
         }
-        
+
         scanAutocompleteOptions();
-        
+
+        // 扫描表格文本单元格 (用于锚点定位) - 仅采集首行代表
+        function scanTableTextCells() {
+            // 性能优化: 只采集每个表格的第一数据行，用于识别列结构
+            // 不需要扫描所有行，因为锚点只需要知道"有哪些列"
+            const tables = document.querySelectorAll('table');
+            const seenColumns = new Set(); // 去重: table_id + col_index
+
+            tables.forEach((table, tableIdx) => {
+                const tableId = table.id || table.className || ('table_' + tableIdx);
+
+                // 获取第一数据行 (跳过 thead)
+                const tbody = table.querySelector('tbody') || table;
+                const firstDataRow = tbody.querySelector('tr');
+                if (!firstDataRow) return;
+
+                const cells = firstDataRow.querySelectorAll('td, th');
+                cells.forEach((cell, colIdx) => {
+                    try {
+                        // 忽略包含输入框的单元格
+                        if (cell.querySelector('input, select, textarea')) return;
+
+                        // 去重检查
+                        const columnKey = `${tableId}_col_${colIdx}`;
+                        if (seenColumns.has(columnKey)) return;
+                        seenColumns.add(columnKey);
+
+                        const text = cell.innerText.trim();
+                        if (!text || text.length > 50) return;
+
+                        const style = window.getComputedStyle(cell);
+                        if (style.display === 'none' || style.visibility === 'hidden') return;
+
+                        const rect = cell.getBoundingClientRect();
+                        if (rect.width === 0 || rect.height === 0) return;
+
+                        // 获取表头信息
+                        let headerText = '';
+                        const thead = table.querySelector('thead tr');
+                        if (thead && thead.cells[colIdx]) {
+                            headerText = thead.cells[colIdx].textContent.trim();
+                        }
+
+                        const data = {
+                            index: results.length,
+                            tagName: cell.tagName.toLowerCase(),
+                            type: 'text_cell',
+                            name: '',
+                            id: cell.id || '',
+                            className: typeof cell.className === 'string' ? cell.className : '',
+                            value: text,
+                            label_text: headerText || text,
+                            xpath: getXPath(cell),
+                            css_selector: getCSSSelector(cell),
+                            rect: {
+                                x: Math.round(rect.x),
+                                y: Math.round(rect.y),
+                                width: Math.round(rect.width),
+                                height: Math.round(rect.height)
+                            },
+                            is_table_cell: true,
+                            row_index: 0, // 首行代表
+                            col_index: colIdx,
+                            table_id: tableId,
+                            table_header: headerText,
+                            readonly: true,
+                            is_anchor_candidate: true
+                        };
+
+                        results.push(data);
+                    } catch (e) {
+                        console.warn('Table cell scan error:', e);
+                    }
+                });
+            });
+        }
+
+        scanTableTextCells();
+
         return results;
-        
+
     } catch (e) {
         return { error: e.toString(), stack: e.stack };
     }

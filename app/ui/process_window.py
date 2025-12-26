@@ -59,7 +59,6 @@ class ProcessWindow(ctk.CTkToplevel):
         # 注入交互式选择脚本，启动轮询
         self._inject_and_start_pick_mode()
         
-        threading.Thread(target=self._lock_browser_layout, daemon=True).start()
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def _get_target_tab(self):
@@ -228,7 +227,6 @@ class ProcessWindow(ctk.CTkToplevel):
         self.auto_map_btn = self.toolbar.auto_map_btn
         self.clear_mapping_btn = self.toolbar.clear_mapping_btn
         self.anchor_var = self.toolbar.anchor_var
-        self.anchor_selector = self.toolbar.anchor_selector
         self.mode_var = self.toolbar.mode_var
         self.mode_selector = self.toolbar.mode_selector
         self.start_btn = self.toolbar.start_btn
@@ -386,111 +384,60 @@ class ProcessWindow(ctk.CTkToplevel):
             self.master.add_log("翻页模式: 手动（请手动翻页后点击'继续录入'）")
     
     def _on_continue_fill(self):
-        """手动模式下继续录入"""
+        """继续录入 - 使用新架构统一入口"""
         if not self.field_mapping:
             self.master.add_log("请先建立字段映射", "warning")
             return
         
-        self.master.add_log("继续录入...")
+        # 检查是否有填充队列
+        if not hasattr(self, '_fill_queue') or not self._fill_queue:
+            self.master.add_log("⚠️ 没有填充队列，请先点击「启动」", "warning")
+            return
+        
+        if not self._fill_queue.has_more:
+            self.master.add_log("✅ 所有任务已完成", "success")
+            return
+        
+        self.master.add_log(f"📄 继续录入 (第 {self._fill_queue.current_index + 1} 条)...")
         self.continue_btn.configure(state="disabled")
         
-        # 检查是否是锚点模式
-        anchor_text = self.anchor_selector.get()
-        key_column = None
-        if anchor_text and anchor_text != "按顺序录入":
-            key_column = anchor_text
-        
-        if key_column:
-            # 锚点模式：需要重新扫描当前页的锚点值
-            threading.Thread(target=self._execute_anchor_page_fill, args=(key_column,), daemon=True).start()
-        else:
-            # 普通模式继续
-            threading.Thread(target=self._execute_fill_continue, daemon=True).start()
+        # 统一入口：不再区分锚点/非锚点
+        threading.Thread(target=self._execute_continue_queue, daemon=True).start()
     
-    def _execute_anchor_page_fill(self, key_column):
-        """锚点模式翻页后重新扫描并填充当前页 - 委托给 controller"""
+    def _execute_continue_queue(self):
+        """继续执行填充队列 - 统一入口"""
         try:
-            # 同步配置到 controller
-            self.session_controller.set_config(
-                fill_mode="batch_table" if "批量" in self.mode_selector.get() else "single_form",
-                key_column=key_column,
-                pagination_mode=self.pagination_mode
-            )
-            self.session_controller.set_mappings(self.field_mapping)
-            self.session_controller.state.processed_excel_indices = getattr(self, '_processed_excel_indices', set())
+            from app.core.smart_form_filler import SmartFormFiller
             
-            # 调用 controller 执行当前页填充
-            self.session_controller._execute_anchor_page_fill()
-            
-            # 同步状态回 UI
-            self._processed_excel_indices = self.session_controller.state.processed_excel_indices
-            
-            # 更新 UI
-            state = self.session_controller.state
-            self.master.add_log(f"本页填充完成: 成功 {state.total_success}, 失败 {state.total_error}")
-            self.master.add_log(f"累计已处理: {len(self._processed_excel_indices)} 行")
-            self.after(0, lambda: self.continue_btn.configure(state="normal"))
-                
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            self.master.add_log(f"执行异常: {e}", "error")
-        finally:
-            self.start_btn.configure(state="normal", text="启动")
-
-    
-    def _execute_fill_continue(self):
-        """从暂停位置继续执行填充 - 委托给 controller"""
-        try:
-            if not hasattr(self, '_paused_row_idx'):
-                self.master.add_log("⚠️ 没有暂停的任务", "warning")
+            tab = self._get_target_tab()
+            if not tab:
+                self.master.add_log("❌ 无法获取浏览器标签页", "error")
                 return
             
-            # 配置 controller
+            # 翻页后重新校准映射（关键！）
+            self.master.add_log("🔄 正在校准页面元素...")
+            if hasattr(self, 'session_controller'):
+                self.session_controller.rebind_mappings_for_current_page()
+                # 同步更新后的映射到 UI
+                self.field_mapping = self.session_controller.field_mapping
+            
             mode_text = self.mode_selector.get()
-            anchor_text = self.anchor_selector.get()
-            key_column = anchor_text.replace("⚓ ", "") if anchor_text and "按顺序" not in anchor_text else None
+            fill_mode = "batch_table" if "表格批量" in mode_text else "single_form"
             
-            self.session_controller.set_config(
-                fill_mode="batch_table" if "表格批量" in mode_text else "single_form",
-                key_column=key_column,
-                pagination_mode=self.pagination_mode
+            result = SmartFormFiller.execute_queue(
+                tab=tab,
+                fill_queue=self._fill_queue,
+                fingerprint_mappings=self.field_mapping,
+                fill_mode=fill_mode,
+                progress_callback=lambda c, t, m, s: self.master.add_log(m, s)
             )
-            self.session_controller.set_mappings(self.field_mapping)
-            self.session_controller.state.current_row_idx = self._paused_row_idx
-            self.session_controller.state.current_page = getattr(self, '_paused_page_number', 1)
             
-            # 最小化并继续
-            self.master.iconify()
-            self.master.add_log(f"📄 从第 {self._paused_row_idx + 1} 行继续...")
-            
-            # 调用 controller 继续填充
-            self.session_controller.resume_fill()
-            
-            # 等待完成或暂停
-            while self.session_controller.state.is_running and not self.session_controller.state.is_paused:
-                if self.abort_event.is_set():
-                    self.session_controller.stop_fill()
-                    break
-                time.sleep(0.2)
-            
-            # 同步状态回 UI
-            if self.session_controller.state.is_paused:
-                self._paused_row_idx = self.session_controller.state.current_row_idx
-                self._paused_page_number = self.session_controller.state.current_page
+            # 检查是否还有剩余任务
+            if result.get('has_more', False):
                 self.after(0, lambda: self.continue_btn.configure(state="normal"))
+                self.master.add_log(f"✅ 填充完成 (成功 {result['success']} 行)，可继续...")
             else:
-                # 填充完成
-                state = self.session_controller.state
-                self.master.add_log(f"{'='*40}")
-                self.master.add_log("✅ 全部填表完成!", "success")
-                self.master.add_log(f"   成功: {state.total_success} 行", "success")
-                if state.total_error:
-                    self.master.add_log(f"   失败: {state.total_error} 行", "error")
-                self.master.add_log(f"{'='*40}")
-                
-                if hasattr(self, '_paused_row_idx'): del self._paused_row_idx
-                if hasattr(self, '_paused_page_number'): del self._paused_page_number
+                self.master.add_log(f"✅ 全部填充完成! 成功: {result['success']} 行", "success")
                 
         except Exception as e:
             import traceback
@@ -498,7 +445,6 @@ class ProcessWindow(ctk.CTkToplevel):
             self.master.add_log(f"❌ 执行异常: {e}", "error")
         finally:
             self._reset_button_states()
-
     
     def _update_progress_display(self, current, total, page, fields=None):
         """更新进度显示（详细信息：当前行、总行数、页码、字段数）"""
@@ -527,7 +473,7 @@ class ProcessWindow(ctk.CTkToplevel):
         self.clear_mapping_btn.configure(state="disabled")
         if hasattr(self, 'save_btn'): self.save_btn.configure(state="disabled")
         if hasattr(self, 'load_btn'): self.load_btn.configure(state="disabled")
-        if hasattr(self, 'anchor_selector'): self.anchor_selector.configure(state="disabled")
+        # anchor_selector已删除，跳过
         if hasattr(self, 'mode_selector'): self.mode_selector.configure(state="disabled")
         
         # 启动后台线程
@@ -639,64 +585,59 @@ class ProcessWindow(ctk.CTkToplevel):
         )
 
     def _execute_fill(self):
-        """在后台线程执行智能填表 - 委托给 controller"""
+        """在后台线程执行智能填表 - 使用新架构"""
         try:
-            # === 1. 读取并配置 controller ===
+            # === 1. 读取配置 ===
             mode_text = self.mode_selector.get()
             fill_mode = "batch_table" if "表格批量" in mode_text else "single_form"
             
-            anchor_text = self.anchor_selector.get()
-            key_column = anchor_text if anchor_text and anchor_text != "按顺序录入" else None
-            
-            pagination_mode = self.pagination_mode if self.selected_pagination_btn else "manual"
-            
-            # 配置 controller
-            self.session_controller.set_config(
-                fill_mode=fill_mode,
-                key_column=key_column,
-                pagination_mode=pagination_mode
-            )
-            self.session_controller.set_mappings(self.field_mapping)
-            
-            # 设置翻页
-            if self.selected_pagination_btn:
-                btn_xpath = self.selected_pagination_btn.get('xpath', '')
-                if btn_xpath:
-                    self.session_controller.setup_pagination(btn_xpath)
+            anchor_text = self.anchor_var.get()
+            anchor_column = anchor_text if anchor_text and anchor_text != "按顺序录入" else None
             
             # === 2. 最小化窗口 ===
             self.master.iconify()
             self.master.add_log("📉 窗口已最小化，准备开始填表...")
-            self.master.add_log(f"🚀 启动智能填表（自愈模式）")
-            if key_column:
-                self.master.add_log(f"   ⚓ 使用锚点列: {key_column}")
+            self.master.add_log(f"🚀 启动智能填表（模式: {fill_mode}）")
+            if anchor_column:
+                self.master.add_log(f"   ⚓ 使用锚点列: {anchor_column}")
             self.master.add_log(f"   映射字段: {len(self.field_mapping)} 个")
             
-            # === 3. 启动填充 ===
-            self.session_controller.start_fill()
-            
-            # 等待填充完成或暂停
-            while self.session_controller.state.is_running and not self.session_controller.state.is_paused:
-                if self.abort_event.is_set():
-                    self.session_controller.stop_fill()
-                    break
-                time.sleep(0.2)
-            
-            # === 4. 处理暂停状态 ===
-            if self.session_controller.state.is_paused:
-                self.after(0, lambda: self.continue_btn.configure(state="normal"))
+            # === 3. 获取浏览器 tab ===
+            tab = self._get_target_tab()
+            if not tab:
+                self.master.add_log("❌ 无法获取浏览器标签页", "error")
                 return
             
-            # === 5. 填充完成 ===
-            state = self.session_controller.state
-            self.master.add_log(f"{'='*40}")
-            self.master.add_log("✅ 全部填表完成!", "success")
-            self.master.add_log(f"   成功: {state.total_success} 行", "success")
-            if state.total_error:
-                self.master.add_log(f"   失败: {state.total_error} 行", "error")
-            if state.total_healed:
-                self.master.add_log(f"   🩹 自动修复: {state.total_healed} 个", "success")
-            self.master.add_log(f"{'='*40}")
+            # === 4. 【新架构】生成填充队列 ===
+            from app.core.anchor_resolver import AnchorResolver
+            from app.core.smart_form_filler import SmartFormFiller
+            
+            resolver = AnchorResolver(tab)
+            self._fill_queue = resolver.resolve(
+                excel_data=self.excel_data,
+                fingerprint_mappings=self.field_mapping,
+                anchor_column=anchor_column
+            )
+            
+            self.master.add_log(f"📋 生成 {self._fill_queue.total_count} 个填充任务")
+            
+            # === 5. 【新架构】执行填充队列 ===
+            result = SmartFormFiller.execute_queue(
+                tab=tab,
+                fill_queue=self._fill_queue,
+                fingerprint_mappings=self.field_mapping,
+                fill_mode=fill_mode,
+                progress_callback=lambda c, t, m, s: self.master.add_log(m, s)
+            )
+            
+            # === 6. 检查是否还有剩余任务 ===
+            if result.get('has_more', False):
+                self.after(0, lambda: self.continue_btn.configure(state="normal"))
+                self.master.add_log(f"✅ 填充完成 (成功 {result['success']} 行)，点击「继续录入」填写下一条")
+            else:
+                self.master.add_log(f"✅ 全部填充完成! 成功: {result['success']} 行", "success")
+                if result.get('error', 0) > 0:
+                    self.master.add_log(f"   失败: {result['error']} 行", "error")
                     
         except Exception as e:
             import traceback
@@ -713,7 +654,7 @@ class ProcessWindow(ctk.CTkToplevel):
         self.clear_mapping_btn.configure(state="normal")
         if hasattr(self, 'save_btn'): self.save_btn.configure(state="normal")
         if hasattr(self, 'load_btn'): self.load_btn.configure(state="normal")
-        if hasattr(self, 'anchor_selector'): self.anchor_selector.configure(state="normal")
+        # anchor_selector已删除，跳过
         if hasattr(self, 'mode_selector'): self.mode_selector.configure(state="normal")
 
     def _count_rows_on_current_page(self, tab):
@@ -806,7 +747,7 @@ class ProcessWindow(ctk.CTkToplevel):
         try:
             data = {
                 "mode": self.mode_selector.get(),
-                "anchor": self.anchor_selector.get(),
+                "anchor": self.anchor_var.get(),
                 "mappings": {k: v.to_dict() for k, v in self.field_mapping.items()},
                 "fingerprints": [fp.to_dict() for fp in self.matched_fingerprints]
             }
@@ -834,7 +775,7 @@ class ProcessWindow(ctk.CTkToplevel):
             
             # 1. 恢复界面选项
             if "mode" in data: self.mode_selector.set(data["mode"])
-            if "anchor" in data: self.anchor_selector.set(data["anchor"])
+            if "anchor" in data: self.anchor_var.set(data["anchor"])
             
             # 2. 恢复指纹库 (避免重新扫描)
             if "fingerprints" in data:

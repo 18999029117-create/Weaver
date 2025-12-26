@@ -74,6 +74,7 @@ class MappingCanvas(ctk.CTkFrame):
         # 5. 绑定事件
         self._draw_layout()
         self.canvas.bind("<Button-1>", self._on_canvas_click)
+        self.canvas.bind("<Button-3>", self._on_canvas_right_click)  # 右键撤销连线
         self.canvas.bind("<MouseWheel>", self._on_mousewheel)  # Windows
         self.canvas.bind("<Button-4>", self._on_mousewheel)    # Linux
         self.canvas.bind("<Button-5>", self._on_mousewheel)    # Linux
@@ -347,6 +348,42 @@ class MappingCanvas(ctk.CTkFrame):
         web_box_id = self.web_boxes[web_idx][4]
         self.canvas.itemconfig(web_box_id, outline="#000000", fill="#F5F5F7")
         
+        if self.on_mapping_complete:
+            self.on_mapping_complete(self.mappings)
+    
+    def _on_canvas_right_click(self, event):
+        """右键点击：撤销连线"""
+        scrolled_y = self.canvas.canvasy(event.y)
+        x = event.x
+        y = scrolled_y
+        
+        # 检查是否点击了已连线的 Excel 列
+        for col_name, (x1, y1, x2, y2, box_id, text_id) in self.excel_boxes.items():
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                if col_name in self.connection_lines:
+                    self._remove_connection(col_name)
+                    print(f"[MappingCanvas] 已撤销连线: {col_name}")
+                return
+    
+    def _remove_connection(self, excel_col):
+        """移除指定 Excel 列的连线"""
+        if excel_col not in self.connection_lines:
+            return
+            
+        # 删除连线
+        self.canvas.delete(self.connection_lines[excel_col])
+        del self.connection_lines[excel_col]
+        
+        # 恢复 Excel 框颜色
+        if excel_col in self.excel_boxes:
+            box_id = self.excel_boxes[excel_col][4]
+            self.canvas.itemconfig(box_id, fill="#FFFFFF")
+        
+        # 从映射中移除
+        if excel_col in self.mappings:
+            del self.mappings[excel_col]
+        
+        # 通知回调
         if self.on_mapping_complete:
             self.on_mapping_complete(self.mappings)
 

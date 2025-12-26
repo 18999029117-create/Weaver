@@ -213,6 +213,143 @@ class FillSessionController:
         if fp.anchors.get('placeholder'):
             return fp.anchors['placeholder'].strip()
         return fp.features.get('name', '') or fp.raw_data.get('id', '')
+
+    def rebind_mappings_for_current_page(self) -> bool:
+        """
+        为当前页面重新绑定映射 (翻页后自愈)
+        
+        功能:
+        1. 重新扫描当前页
+        2. 根据原有映射的"结构特征" (表头/列索引/Label)，在当前页找到对应的新元素
+        3. 更新 self.field_mapping
+        4. 重新计算 batch inputs (related_inputs)
+        
+        Returns:
+            是否成功重新绑定
+        """
+        self._log("🔄 正在重新校准页面元素...", "info")
+        
+        # 1. 重新扫描 (耗时操作，注意性能)
+        try:
+            # 缩短等待时间，因为通常翻页后元素已经就绪（或者由外部控制了等待）
+            new_fingerprints = self.scan_page(max_wait=5.0) 
+            if not new_fingerprints:
+                self._log("⚠️ 重新扫描未发现元素", "warning")
+                return False
+                
+            self.web_fingerprints = new_fingerprints
+            
+            # 2. 遍历现有映射，寻找新替身
+            new_mapping = {}
+            rebound_count = 0
+            
+            for excel_col, old_fp in self.field_mapping.items():
+                best_match = self._find_best_match_in_page(old_fp, new_fingerprints)
+                
+                if best_match:
+                    new_mapping[excel_col] = best_match
+                    rebound_count += 1
+                else:
+                    self._log(f"⚠️ 丢失映射: {excel_col} (当前页未找到对应元素)", "warning")
+                    # 保留旧的作为兜底，虽然可能失效
+                    new_mapping[excel_col] = old_fp
+            
+            self.field_mapping = new_mapping
+            
+            # 3. 重新计算批量关联 (对于 batch_table 模式至关重要)
+            self._recalculate_batch_relations(new_fingerprints)
+            
+            self._log(f"✅ 映射校准完成: 更新 {rebound_count} 个字段", "success")
+            return True
+            
+        except Exception as e:
+            self._log(f"❌ 重新绑定失败: {e}", "error")
+            return False
+
+    def _find_best_match_in_page(self, old_fp: ElementFingerprint, new_fingerprints: List[ElementFingerprint]) -> Optional[ElementFingerprint]:
+        """在当前页查找最佳匹配元素"""
+        # 策略1: 表格结构匹配 (Table ID + Col Index) - 最稳健
+        if old_fp.table_info and old_fp.table_info.get('column_index') is not None:
+            old_col_idx = old_fp.table_info['column_index']
+            # 精确匹配列索引
+            candidates = [fp for fp in new_fingerprints 
+                          if fp.table_info and fp.table_info.get('column_index') == old_col_idx]
+            
+            # 如果有多个，优先选 table_header 相同的
+            old_header = old_fp.table_info.get('table_header', '')
+            if old_header:
+                for fp in candidates:
+                    if fp.table_info.get('table_header') == old_header:
+                        return fp
+            
+            # 否则返回第一个 (通常是第一行)
+            if candidates:
+                return candidates[0]
+                
+        # 策略2: Label/Placeholder 匹配
+        old_label = old_fp.anchors.get('label') or old_fp.anchors.get('visual_label')
+        old_placeholder = old_fp.anchors.get('placeholder')
+        
+        for fp in new_fingerprints:
+            # Label 匹配
+            curr_label = fp.anchors.get('label') or fp.anchors.get('visual_label')
+            if old_label and curr_label and old_label == curr_label:
+                return fp
+                
+            # Placeholder 匹配
+            if old_placeholder and fp.anchors.get('placeholder') == old_placeholder:
+                return fp
+                
+        # 策略3: Name 属性匹配
+        old_name = old_fp.features.get('name')
+        if old_name:
+            for fp in new_fingerprints:
+                if fp.features.get('name') == old_name:
+                    return fp
+                    
+        return None
+
+    def _recalculate_batch_relations(self, fingerprints: List[ElementFingerprint]):
+        """
+        重新计算批量模式的关联元素
+        (找出每一列的所有输入框，挂载到 mapping 的 fingerprint 上)
+        """
+        # 预先按列分组
+        rows_by_col_idx = {}     # {col_idx: [fp, ...]}
+        rows_by_header = {}      # {header: [fp, ...]}
+        
+        for fp in fingerprints:
+            # 收集表格列信息
+            c_idx = fp.table_info.get('column_index')
+            if c_idx is not None:
+                if c_idx not in rows_by_col_idx: rows_by_col_idx[c_idx] = []
+                rows_by_col_idx[c_idx].append(fp)
+            
+            header = fp.table_info.get('table_header')
+            if header:
+                if header not in rows_by_header: rows_by_header[header] = []
+                rows_by_header[header].append(fp)
+                
+        # 更新 field_mapping 中的 related_inputs
+        for fp in self.field_mapping.values():
+            related = []
+            
+            # 尝试通过列索引找同类
+            c_idx = fp.table_info.get('column_index')
+            if c_idx is not None and c_idx in rows_by_col_idx:
+                # 排除自己
+                related = [x for x in rows_by_col_idx[c_idx] if x != fp]
+            
+            # 尝试通过表头找同类
+            elif fp.table_info.get('table_header'):
+                header = fp.table_info.get('table_header')
+                if header in rows_by_header:
+                    related = [x for x in rows_by_header[header] if x != fp]
+                    
+            # 挂载 (注意：ElementFingerprint 对象本身没有 related_inputs 属性，
+            # 但之前在 mapping_canvas 里是动态加上去的，这里我们也动态加上)
+            fp.related_inputs = related
+
     
     # ==================== 翻页服务 ====================
     
@@ -229,7 +366,7 @@ class FillSessionController:
                               '翻页', '下一步', '向后', '››', '»', '>>', '>', '→'];
             const results = [];
             
-            const elements = document.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"], .btn, .page-btn');
+            const elements = document.querySelectorAll('button, a, [role=\"button\"], input[type=\"button\"], input[type=\"submit\"], .btn, .page-btn, [onclick*=\"page\"], [onclick*=\"next\"], .pagination button, .pagination a');
             
             elements.forEach((el, idx) => {
                 const text = (el.innerText || el.textContent || el.value || el.getAttribute('aria-label') || el.getAttribute('title') || '').trim();

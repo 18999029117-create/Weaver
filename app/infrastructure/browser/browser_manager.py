@@ -172,6 +172,9 @@ class BrowserManager:
         
         _traverse_and_inject(target)
         
+        # 缓存 iframe 存在状态，优化后续轮询
+        self._has_iframes = success_count > 1  # 如果注入了多个 frame，说明有 iframe
+        
         if success_count > 0:
             print(f"[BrowserManager] Interaction script injected into {success_count} frame(s)")
             # 确保注入后 pick mode 是启用的
@@ -181,24 +184,17 @@ class BrowserManager:
     
     def get_picked_element(self, tab: Optional[Any] = None) -> Optional[Dict[str, Any]]:
         """
-        获取用户双击选择的元素信息
+        获取用户双击选择的元素信息 (性能优化版)
         
-        注意：DrissionPage run_js 需要显式 return 语句才能获取返回值
+        优化：
+        - 主文档优先，快速返回
+        - 仅在主文档无结果且确认有 iframe 时才扫描 iframe
         """
         target = tab or self.page
         if not target:
             return None
         
-        # 检查状态的 JS (需要 return)
-        status_js = """return (function() {
-            return {
-                injected: !!window.__weaver_interaction_injected,
-                pickMode: window.weaver_pick_mode,
-                hasPicked: !!window.weaver_picked_element
-            };
-        })();"""
-        
-        # 获取并清除选中元素的 JS (需要 return)
+        # 轻量级 JS：只获取并清除选中元素
         pick_js = """return (function() {
             if (window.weaver_get_and_clear_picked) {
                 return window.weaver_get_and_clear_picked();
@@ -206,19 +202,22 @@ class BrowserManager:
             return null;
         })();"""
         
-        # 1. 先查主文档
+        # 1. 先查主文档（最快路径）
         try:
             result = target.run_js(pick_js)
             if result:
                 print(f"[BrowserManager] 🎯 主文档捕获到元素!")
                 return result
-        except Exception as e:
-            print(f"[BrowserManager] 主文档查询异常: {e}")
+        except:
+            pass
         
-        # 2. 扫描 iframe
+        # 2. 仅在有缓存的 iframe 时才扫描（避免每次都遍历 DOM）
+        # 使用实例变量缓存 iframe 数量，inject 时设置
+        if not getattr(self, '_has_iframes', False):
+            return None
+            
         try:
             frames = target.eles('tag:iframe')
-            
             for i, frame_ele in enumerate(frames):
                 try:
                     frame = target.get_frame(frame_ele)
@@ -229,16 +228,20 @@ class BrowserManager:
                             result['in_iframe'] = True
                             print(f"[BrowserManager] 🎯 iframe[{i}] 捕获到元素!")
                             return result
-                except Exception as e:
-                    print(f"[BrowserManager] iframe[{i}] 访问异常: {e}")
-        except Exception as e:
-            print(f"[BrowserManager] 获取 iframe 列表异常: {e}")
+                except:
+                    pass
+        except:
+            pass
             
         return None
     
     def flash_elements(self, xpaths: List[str], tab: Optional[Any] = None) -> None:
         """
-        让指定元素闪烁（广播到主文档和第一层 iframe）
+        让指定元素闪烁（性能优化版）
+        
+        优化：
+        - 限制最多闪烁 10 个元素（避免大量 DOM 操作）
+        - 仅在有 iframe 时才广播到 iframe
         """
         if not xpaths:
             return
@@ -247,6 +250,7 @@ class BrowserManager:
         if not target:
             return
         
+        # 性能已在 JS 端优化（使用包围框模式），无需限制数量
         xpaths_json = str(xpaths).replace("'", '"')
         script = f"if (window.weaver_flash_elements) {{ window.weaver_flash_elements({xpaths_json}); }}"
         
@@ -256,7 +260,10 @@ class BrowserManager:
         except:
             pass
         
-        # 第一层 iframe
+        # 仅在有 iframe 时才广播
+        if not getattr(self, '_has_iframes', False):
+            return
+            
         try:
             frames = target.eles('tag:iframe')
             for frame_ele in frames:
@@ -271,7 +278,7 @@ class BrowserManager:
     
     def set_pick_mode(self, enabled: bool, tab: Optional[Any] = None) -> None:
         """
-        开启/关闭选择模式
+        开启/关闭选择模式（性能优化版）
         """
         target = tab or self.page
         if not target:
@@ -284,7 +291,10 @@ class BrowserManager:
         except:
             pass
         
-        # 第一层 iframe
+        # 仅在有 iframe 时才广播
+        if not getattr(self, '_has_iframes', False):
+            return
+            
         try:
             frames = target.eles('tag:iframe')
             for frame_ele in frames:

@@ -40,6 +40,9 @@ class NormalFillStrategy(BaseFillStrategy):
         has_pagination = self.pagination_controller is not None
         is_auto_mode = self.config.pagination_mode == "auto"
         
+        if self.state.current_page > 1:
+            self.controller.rebind_mappings_for_current_page()
+            
         self._execute_normal_fill(fill_mode, has_pagination, is_auto_mode)
     
     def _execute_normal_fill(self, fill_mode: str, has_pagination: bool, is_auto_mode: bool):
@@ -80,11 +83,12 @@ class NormalFillStrategy(BaseFillStrategy):
             
             result = SmartFormFiller.fill_form_with_healing(
                 tab=self.tab,
-                excel_data=page_data.reset_index(drop=True),
+                excel_data=self.excel_data,  # 传完整数据，由函数内部跳过已处理的行
                 fingerprint_mappings=self.field_mapping,
                 fill_mode=fill_mode,
                 key_column=None,
-                progress_callback=lambda c, t, m, s: self._log(m, s)
+                progress_callback=lambda c, t, m, s: self._log(m, s),
+                start_row_idx=current_row_idx  # 从当前行开始
             )
             
             self.state.total_success += result['success']
@@ -92,7 +96,8 @@ class NormalFillStrategy(BaseFillStrategy):
             self.state.total_healed += result['healed']
             self.state.errors.extend(result['errors'])
             
-            current_row_idx = end_row_idx
+            # 从结果获取下一行索引
+            current_row_idx = result.get('next_row_idx', current_row_idx + 1)
             
             if current_row_idx < total_rows:
                 if has_pagination and is_auto_mode:
@@ -102,6 +107,7 @@ class NormalFillStrategy(BaseFillStrategy):
                         page_number += 1
                         self.pagination_controller.wait_for_page_ready(timeout=5)
                         self._log(f"✅ 已翻至第 {page_number} 页")
+                        self.controller.rebind_mappings_for_current_page()
                     else:
                         self._log("⚠️ 翻页失败，可能已是最后一页", "warning")
                         break
