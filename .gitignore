@@ -68,8 +68,33 @@ Thumbs.db
 *.tmp
 *.temp
 *.bak
+test_output*.txt
 
 # 敏感配置
 .env.local
 .env.*.local
 config.local.py
+
+# ============= 项目特定忽略 =============
+
+# 浏览器配置/缓存 (DrissionPage)
+browser_profile/
+
+# 备份文件
+*.zip
+*.rar
+backup*/
+
+# 保存的页面
+saved_pages/
+
+# 临时脚本
+1.py
+save_page_tool.py
+
+# 打包配置
+*.spec
+
+# 测试数据文件 (Excel等)
+tests/*.xlsx
+tests/*.xls
