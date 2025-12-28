@@ -1,0 +1,66 @@
+{
+    "element_name": "添加产品按钮",
+    "description": "采购计划管理页面 - 创建采购计划 tab 下的添加产品按钮",
+    "page_context": {
+        "page_title": "采购计划管理",
+        "tab_name": "创建采购计划",
+        "container_class": "elian-tool_right"
+    },
+    "fingerprint": {
+        "tag": "button",
+        "type": "button",
+        "text_content": "添加产品",
+        "text_content_with_space": "添加产品 ",
+        "css_classes": [
+            "el-button",
+            "el-button--success",
+            "el-button--small"
+        ],
+        "vue_scope_id": "data-v-ebab576c"
+    },
+    "locator_strategies": {
+        "by_text_contains": {
+            "description": "最推荐 - 按文本内容匹配",
+            "drission_page": "tag:button@@text():添加产品",
+            "xpath": "//button[contains(.//span/text(), '添加产品')]",
+            "css_plus_text": "button.el-button--success:contains('添加产品')"
+        },
+        "by_exact_text": {
+            "description": "精确文本匹配（注意末尾空格）",
+            "drission_page": "tag:button@@text()=添加产品 ",
+            "xpath": "//button[span[normalize-space(text())='添加产品']]"
+        },
+        "by_css_class": {
+            "description": "按CSS类定位（可能有多个匹配）",
+            "css_selector": "button.el-button.el-button--success.el-button--small",
+            "drission_page": "css:button.el-button--success"
+        },
+        "by_context": {
+            "description": "按上下文位置（工具栏右侧第二个成功按钮）",
+            "xpath": "(//div[@class='elian-tool_right']//button[contains(@class, 'el-button--success')])[2]",
+            "nearby_elements": {
+                "previous_sibling": "导入按钮",
+                "next_sibling": "历史单加载按钮",
+                "parent": "div.elian-tool_right"
+            }
+        },
+        "by_span_child": {
+            "description": "通过子元素span定位",
+            "xpath": "//button[span[contains(text(), '添加产品')]]",
+            "drission_page": "tag:span@@text():添加产品/../.."
+        }
+    },
+    "fallback_sequence": [
+        "by_text_contains",
+        "by_exact_text",
+        "by_context",
+        "by_css_class"
+    ],
+    "notes": [
+        "此按钮位于 iframe 中，操作前需先切换到正确的 iframe 上下文",
+        "vue_scope_id (data-v-ebab576c) 不可靠，编译后可能变化",
+        "按钮文本末尾有一个空格，使用 contains 匹配更安全",
+        "这是第二个绿色按钮，第一个是「导入」按钮"
+    ],
+    "last_updated": "2025-12-27"
+}

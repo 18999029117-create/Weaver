@@ -1,100 +1,29 @@
-# Weaver - Git 忽略文件
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# 虚拟环境
-venv/
-venv_build/
-ENV/
-env/
-.env
 
 # IDE
-.idea/
 .vscode/
-*.swp
-*.swo
-*~
+.idea/
 
-# 测试
-.tox/
-.nox/
-.coverage
-.coverage.*
-htmlcov/
-.pytest_cache/
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# ruff
-.ruff_cache/
-
-# 日志
-*.log
+# Project Specific
+tests/
+*.xlsx
+*.xls
+cache/
 logs/
+temp/
+element_selector_cache.json
+采购处理报告_*.xlsx
 
-# 系统文件
-.DS_Store
+# System
 Thumbs.db
+Desktop.ini
 
-# 临时文件
-*.tmp
-*.temp
-*.bak
-test_output*.txt
-
-# 敏感配置
-.env.local
-.env.*.local
-config.local.py
-
-# ============= 项目特定忽略 =============
-
-# 浏览器配置/缓存 (DrissionPage)
+# Browser Cache (Large Files)
 browser_profile/
-
-# 备份文件
-*.zip
-*.rar
-backup*/
-
-# 保存的页面
-saved_pages/
-
-# 临时脚本
-1.py
-save_page_tool.py
-
-# 打包配置
-*.spec
-
-# 测试数据文件 (Excel等)
-tests/*.xlsx
-tests/*.xls
+browser_data/
+UserData/
+Local Storage/

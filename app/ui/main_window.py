@@ -265,6 +265,30 @@ class AutoFillerUI(ctk.CTk):
                 self._update_progress(0.4, "🌐 浏览器连接成功")
                 self.add_log("🌐 已连接到目标页面")
                 
+                # 检查是否为库车医院定制版本
+                edition = getattr(self, 'edition', None)
+                edition_id = getattr(edition, 'name', '') if edition else ''
+                
+                if edition_id == "库车市人民医院":
+                    # 库车版本：跳过画布，直接进入简化流程
+                    self._update_progress(1.0, "🏥 启动库车专属流程...")
+                    self.add_log("🏥 检测到库车医院版本，启动专属流程")
+                    self._hide_progress()
+                    
+                    # 获取浏览器 tab 对象
+                    browser_tab = self.browser_mgr.page  # DrissionPage 的 tab
+                    
+                    # 打开库车专属对话框
+                    from app.customizations.kuche_hospital.start_dialog import KucheStartDialog
+                    KucheStartDialog(
+                        master=self,
+                        excel_data=df,
+                        browser_tab=browser_tab,
+                        edition=edition
+                    )
+                    return
+                
+                # 通用版本：原有流程
                 # 步骤3: 扫描网页元素（实际耗时操作，无需额外sleep）
                 self._update_progress(0.5, "🔍 正在深度扫描网页元素...")
                 self.add_log("🔍 启动深度扫描...")

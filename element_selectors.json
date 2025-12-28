@@ -1,0 +1,746 @@
+{
+    "页面信息": {
+        "名称": "医用耗材采购计划管理",
+        "平台": "易联数据平台",
+        "框架": "ElementUI (Vue 2.x)",
+        "特征标识": {
+            "页面标题": "采购计划管理",
+            "页面标题选择器": ".elian-title div"
+        }
+    },
+    "元素定位配置": {
+        "说明": "每个元素包含多种定位策略，按优先级从高到低排列，系统会依次尝试直到成功",
+        "超时设置": 10,
+        "重试次数": 3
+    },
+    "输入框": {
+        "医用耗材代码": {
+            "描述": "搜索条件-医用耗材代码输入框",
+            "元素类型": "input",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//label[contains(text(),'医用耗材代码')]/following-sibling::div//input[@class='el-input__inner']",
+                    "优先级": 1,
+                    "说明": "通过label文本精确定位"
+                },
+                {
+                    "方式": "css",
+                    "值": "label[for='prodCode'] + div input.el-input__inner",
+                    "优先级": 2,
+                    "说明": "通过for属性定位"
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'el-form-item')][.//label[contains(text(),'医用耗材代码')]]//input",
+                    "优先级": 3,
+                    "说明": "通过表单项容器定位"
+                }
+            ],
+            "特征指纹": {
+                "placeholder": "请输入",
+                "nearby_label": "医用耗材代码",
+                "input_type": "text",
+                "parent_class": "el-form-item"
+            }
+        },
+        "单件产品名称": {
+            "描述": "搜索条件-单件产品名称输入框",
+            "元素类型": "input",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//label[contains(text(),'单件产品名称')]/following-sibling::div//input[@class='el-input__inner']",
+                    "优先级": 1
+                },
+                {
+                    "方式": "css",
+                    "值": "label[for='prodName'] + div input.el-input__inner",
+                    "优先级": 2
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'el-form-item')][.//label[contains(text(),'单件产品名称')]]//input",
+                    "优先级": 3
+                }
+            ],
+            "特征指纹": {
+                "placeholder": "请输入",
+                "nearby_label": "单件产品名称",
+                "input_type": "text"
+            }
+        },
+        "耗材材质": {
+            "描述": "搜索条件-耗材材质输入框",
+            "元素类型": "input",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//label[contains(text(),'耗材材质')]/following-sibling::div//input[@class='el-input__inner']",
+                    "优先级": 1
+                },
+                {
+                    "方式": "css",
+                    "值": "label[for='prodMatl'] + div input.el-input__inner",
+                    "优先级": 2
+                }
+            ],
+            "特征指纹": {
+                "placeholder": "请输入",
+                "nearby_label": "耗材材质"
+            }
+        },
+        "规格": {
+            "描述": "搜索条件-规格输入框（默认隐藏）",
+            "元素类型": "input",
+            "默认隐藏": true,
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//label[contains(text(),'规格')]/following-sibling::div//input",
+                    "优先级": 1
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//input[@placeholder='请输入规格:']",
+                    "优先级": 2
+                }
+            ],
+            "特征指纹": {
+                "placeholder": "请输入规格:",
+                "nearby_label": "规格"
+            }
+        },
+        "型号": {
+            "描述": "搜索条件-型号输入框（默认隐藏）",
+            "元素类型": "input",
+            "默认隐藏": true,
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//label[contains(text(),'型号')]/following-sibling::div//input",
+                    "优先级": 1
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//input[@placeholder='请输入型号:']",
+                    "优先级": 2
+                }
+            ],
+            "特征指纹": {
+                "placeholder": "请输入型号:",
+                "nearby_label": "型号"
+            }
+        },
+        "注册证号": {
+            "描述": "搜索条件-注册证号输入框（默认隐藏）",
+            "元素类型": "input",
+            "默认隐藏": true,
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//label[contains(text(),'注册证号')]/following-sibling::div//input",
+                    "优先级": 1
+                },
+                {
+                    "方式": "css",
+                    "值": "label[for='aprvno'] + div input",
+                    "优先级": 2
+                }
+            ],
+            "特征指纹": {
+                "placeholder": "请输入",
+                "nearby_label": "注册证号"
+            }
+        }
+    },
+    "下拉框": {
+        "生产企业": {
+            "描述": "搜索条件-生产企业下拉框（默认隐藏）",
+            "元素类型": "select",
+            "默认隐藏": true,
+            "支持搜索": true,
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//label[contains(text(),'生产企业')]/following-sibling::div//input[@class='el-input__inner']",
+                    "优先级": 1
+                },
+                {
+                    "方式": "css",
+                    "值": "label[for='prodentpCode'] + div .el-select input",
+                    "优先级": 2
+                }
+            ],
+            "特征指纹": {
+                "placeholder": "请输入关键词",
+                "nearby_label": "生产企业",
+                "parent_class": "el-select"
+            },
+            "操作说明": "点击输入框后输入关键词搜索，然后从下拉列表选择"
+        },
+        "申报企业": {
+            "描述": "搜索条件-申报企业下拉框（默认隐藏）",
+            "元素类型": "select",
+            "默认隐藏": true,
+            "支持搜索": true,
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//label[contains(text(),'申报企业')]/following-sibling::div//input[@class='el-input__inner']",
+                    "优先级": 1
+                },
+                {
+                    "方式": "css",
+                    "值": "label[for='dclaEntpCode'] + div .el-select input",
+                    "优先级": 2
+                }
+            ],
+            "特征指纹": {
+                "placeholder": "请输入关键词",
+                "nearby_label": "申报企业"
+            }
+        },
+        "项目名称": {
+            "描述": "搜索条件-项目名称下拉框（默认隐藏）",
+            "元素类型": "select",
+            "默认隐藏": true,
+            "支持搜索": false,
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//label[contains(text(),'项目名称')]/following-sibling::div//input[@class='el-input__inner']",
+                    "优先级": 1
+                },
+                {
+                    "方式": "css",
+                    "值": "label[for='itemname'] + div .el-select input",
+                    "优先级": 2
+                }
+            ],
+            "特征指纹": {
+                "placeholder": "请选择",
+                "nearby_label": "项目名称"
+            },
+            "下拉选项定位": "//ul[@class='el-scrollbar__view el-select-dropdown__list']//li[contains(@class,'el-select-dropdown__item')]"
+        },
+        "挂网状态": {
+            "描述": "搜索条件-挂网状态下拉框（默认隐藏）",
+            "元素类型": "select",
+            "默认隐藏": true,
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//label[contains(text(),'挂网状态')]/following-sibling::div//input[@class='el-input__inner']",
+                    "优先级": 1
+                }
+            ],
+            "特征指纹": {
+                "placeholder": "请选择",
+                "nearby_label": "挂网状态"
+            },
+            "选项值": [
+                "暂停挂网",
+                "已挂网",
+                "停止执行"
+            ]
+        },
+        "配送企业": {
+            "描述": "表格列-配送企业下拉选择",
+            "元素类型": "select",
+            "位置": "表格右侧固定列",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//th[contains(.,'配送企业')]/ancestor::table/following-sibling::div//td[contains(@class,'el-table_1_column_15')]//input",
+                    "优先级": 1
+                }
+            ],
+            "特征指纹": {
+                "column_header": "配送企业 是否缺货 信用等级"
+            }
+        }
+    },
+    "按钮": {
+        "展开": {
+            "描述": "展开/收起更多搜索条件",
+            "元素类型": "button",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//button[.//span[contains(text(),'展开')]]",
+                    "优先级": 1,
+                    "说明": "通过按钮文本定位"
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//button[contains(.,'展开') or contains(.,'收起')]",
+                    "优先级": 2,
+                    "说明": "兼容展开和收起状态"
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'form-button-group')]//button[1]",
+                    "优先级": 3,
+                    "说明": "通过按钮组位置定位"
+                },
+                {
+                    "方式": "css",
+                    "值": ".form-button-group button:first-child",
+                    "优先级": 4
+                }
+            ],
+            "特征指纹": {
+                "button_text": [
+                    "展开",
+                    "收起"
+                ],
+                "has_icon": "el-icon-arrow-down",
+                "css_class": "el-button--default"
+            }
+        },
+        "重置": {
+            "描述": "重置搜索条件",
+            "元素类型": "button",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//button[.//span[text()='重置']]",
+                    "优先级": 1
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'form-button-group')]//button[.//span[text()='重置']]",
+                    "优先级": 2
+                },
+                {
+                    "方式": "css",
+                    "值": ".form-button-group button:nth-child(2)",
+                    "优先级": 3
+                }
+            ],
+            "特征指纹": {
+                "button_text": "重置",
+                "css_class": "el-button--default"
+            }
+        },
+        "查询": {
+            "描述": "执行搜索查询",
+            "元素类型": "button",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//button[contains(@class,'el-button--primary')][.//span[contains(text(),'查询')]]",
+                    "优先级": 1,
+                    "说明": "通过类型+文本双重验证"
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'form-button-group')]//button[contains(@class,'el-button--primary')]",
+                    "优先级": 2
+                },
+                {
+                    "方式": "css",
+                    "值": ".form-button-group .el-button--primary",
+                    "优先级": 3
+                }
+            ],
+            "特征指纹": {
+                "button_text": "查询",
+                "css_class": "el-button--primary",
+                "button_type": "primary"
+            }
+        },
+        "导入": {
+            "描述": "导入采购产品数据",
+            "元素类型": "button",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'elian-tool_right')]//button[.//span[text()='导入']]",
+                    "优先级": 1,
+                    "说明": "指定工具栏区域"
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//button[contains(@class,'el-button--success')][.//span[text()='导入']]",
+                    "优先级": 2
+                }
+            ],
+            "特征指纹": {
+                "button_text": "导入",
+                "css_class": "el-button--success",
+                "parent_class": "elian-tool_right"
+            }
+        },
+        "添加产品": {
+            "描述": "打开添加产品对话框",
+            "元素类型": "button",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//button[contains(@class,'el-button--success')][contains(.,'添加产品')]",
+                    "优先级": 1
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'elian-tool_right')]//button[contains(.,'添加产品')]",
+                    "优先级": 2
+                },
+                {
+                    "方式": "css",
+                    "值": ".elian-tool_right button.el-button--success:nth-child(2)",
+                    "优先级": 3
+                }
+            ],
+            "特征指纹": {
+                "button_text": "添加产品",
+                "css_class": "el-button--success"
+            }
+        },
+        "历史单加载": {
+            "描述": "从历史单据加载数据",
+            "元素类型": "button",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//button[contains(@class,'el-button--primary')][contains(.,'历史单加载')]",
+                    "优先级": 1
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'elian-tool_right')]//button[contains(.,'历史单加载')]",
+                    "优先级": 2
+                }
+            ],
+            "特征指纹": {
+                "button_text": "历史单加载",
+                "css_class": "el-button--primary"
+            }
+        },
+        "批量删除": {
+            "描述": "批量删除选中的产品",
+            "元素类型": "button",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//button[contains(@class,'el-button--danger')][contains(.,'批量删除')]",
+                    "优先级": 1
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'elian-tool_right')]//button[contains(.,'批量删除')]",
+                    "优先级": 2
+                }
+            ],
+            "特征指纹": {
+                "button_text": "批量删除",
+                "css_class": "el-button--danger",
+                "button_type": "danger"
+            }
+        },
+        "暂存": {
+            "描述": "暂存当前采购计划（底部固定栏）",
+            "元素类型": "button",
+            "位置": "底部固定工具栏",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'elian-tool__wrapper') and contains(@class,'isFixed')]//button[contains(.,'暂存')]",
+                    "优先级": 1,
+                    "说明": "通过固定栏+文本定位"
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'isFixed')]//button[contains(@class,'el-button--primary')][1]",
+                    "优先级": 2,
+                    "说明": "固定栏第一个主按钮"
+                }
+            ],
+            "特征指纹": {
+                "button_text": "暂存",
+                "css_class": "el-button--primary",
+                "parent_class": "elian-tool__wrapper isFixed"
+            }
+        },
+        "提交": {
+            "描述": "提交采购计划（底部固定栏）",
+            "元素类型": "button",
+            "位置": "底部固定工具栏",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'elian-tool__wrapper') and contains(@class,'isFixed')]//button[contains(.,'提交')]",
+                    "优先级": 1
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'isFixed')]//button[contains(@class,'el-button--primary')][2]",
+                    "优先级": 2,
+                    "说明": "固定栏第二个主按钮"
+                }
+            ],
+            "特征指纹": {
+                "button_text": "提交",
+                "css_class": "el-button--primary",
+                "parent_class": "elian-tool__wrapper isFixed"
+            }
+        }
+    },
+    "Tab标签": {
+        "创建采购计划": {
+            "定位策略": [
+                {
+                    "方式": "css",
+                    "值": "#tab--1",
+                    "优先级": 1
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[@id='tab--1']",
+                    "优先级": 2
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'el-tabs__item')][contains(text(),'创建采购计划')]",
+                    "优先级": 3
+                }
+            ]
+        },
+        "待送审": {
+            "定位策略": [
+                {
+                    "方式": "css",
+                    "值": "#tab-0",
+                    "优先级": 1
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'el-tabs__item')][text()='待送审']",
+                    "优先级": 2
+                }
+            ]
+        },
+        "待审核": {
+            "定位策略": [
+                {
+                    "方式": "css",
+                    "值": "#tab-1",
+                    "优先级": 1
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'el-tabs__item')][text()='待审核']",
+                    "优先级": 2
+                }
+            ]
+        },
+        "被退回": {
+            "定位策略": [
+                {
+                    "方式": "css",
+                    "值": "#tab-3",
+                    "优先级": 1
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'el-tabs__item')][text()='被退回']",
+                    "优先级": 2
+                }
+            ]
+        },
+        "待发送": {
+            "定位策略": [
+                {
+                    "方式": "css",
+                    "值": "#tab-2",
+                    "优先级": 1
+                }
+            ]
+        },
+        "已发送": {
+            "定位策略": [
+                {
+                    "方式": "css",
+                    "值": "#tab-4",
+                    "优先级": 1
+                }
+            ]
+        },
+        "已作废": {
+            "定位策略": [
+                {
+                    "方式": "css",
+                    "值": "#tab-5",
+                    "优先级": 1
+                }
+            ]
+        }
+    },
+    "表格操作": {
+        "表格容器": {
+            "定位策略": [
+                {
+                    "方式": "css",
+                    "值": ".el-table",
+                    "优先级": 1
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'el-table')]",
+                    "优先级": 2
+                }
+            ]
+        },
+        "表格行": {
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//tbody//tr[contains(@class,'el-table__row')]",
+                    "优先级": 1
+                }
+            ],
+            "说明": "返回所有数据行"
+        },
+        "采购数量输入框": {
+            "描述": "表格中的采购数量可编辑列",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//td[contains(@class,'el-table_1_column_16')]//input",
+                    "优先级": 1,
+                    "说明": "通过列ID定位"
+                },
+                {
+                    "方式": "xpath",
+                    "值": "//th[contains(.,'采购数量')]/ancestor::table//following-sibling::div//td[16]//input",
+                    "优先级": 2,
+                    "说明": "通过列标题定位"
+                }
+            ],
+            "特征指纹": {
+                "column_header": "采购数量",
+                "column_index": 16,
+                "editable": true
+            },
+            "行定位模板": "//tbody//tr[{row_index}]//td[contains(@class,'el-table_1_column_16')]//input"
+        },
+        "备注输入框": {
+            "描述": "表格中的备注可编辑列",
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//td[contains(@class,'el-table_1_column_17')]//input",
+                    "优先级": 1
+                }
+            ],
+            "特征指纹": {
+                "column_header": "备注",
+                "column_index": 17,
+                "editable": true
+            },
+            "行定位模板": "//tbody//tr[{row_index}]//td[contains(@class,'el-table_1_column_17')]//input"
+        },
+        "全选复选框": {
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//th[contains(@class,'el-table-column--selection')]//span[@class='el-checkbox__inner']",
+                    "优先级": 1
+                }
+            ]
+        },
+        "行复选框模板": {
+            "说明": "定位指定行的复选框，替换{row_index}为行号(从1开始)",
+            "定位模板": "//tbody//tr[{row_index}]//td[contains(@class,'el-table-column--selection')]//span[@class='el-checkbox__inner']"
+        }
+    },
+    "分页器": {
+        "总数文本": {
+            "定位策略": [
+                {
+                    "方式": "css",
+                    "值": ".el-pagination__total",
+                    "优先级": 1
+                }
+            ],
+            "说明": "显示格式：共 X 条"
+        },
+        "页码输入框": {
+            "定位策略": [
+                {
+                    "方式": "css",
+                    "值": ".el-pagination__editor input",
+                    "优先级": 1
+                }
+            ]
+        },
+        "每页条数下拉": {
+            "定位策略": [
+                {
+                    "方式": "css",
+                    "值": ".el-pagination__sizes .el-select input",
+                    "优先级": 1
+                }
+            ]
+        },
+        "上一页按钮": {
+            "定位策略": [
+                {
+                    "方式": "css",
+                    "值": ".el-pagination .btn-prev",
+                    "优先级": 1
+                }
+            ]
+        },
+        "下一页按钮": {
+            "定位策略": [
+                {
+                    "方式": "css",
+                    "值": ".el-pagination .btn-next",
+                    "优先级": 1
+                }
+            ]
+        }
+    },
+    "对话框": {
+        "通用关闭按钮": {
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]//button[@class='el-dialog__headerbtn']",
+                    "优先级": 1
+                }
+            ]
+        },
+        "通用确定按钮": {
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]//button[contains(@class,'el-button--primary')][contains(.,'确定')]",
+                    "优先级": 1
+                }
+            ]
+        },
+        "通用取消按钮": {
+            "定位策略": [
+                {
+                    "方式": "xpath",
+                    "值": "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]//button[contains(.,'取消')]",
+                    "优先级": 1
+                }
+            ]
+        }
+    },
+    "元素等待策略": {
+        "说明": "在定位元素前需要等待的条件",
+        "页面加载完成": {
+            "等待条件": "//div[@id='weaver-ready-indicator']",
+            "说明": "页面右下角会出现绿色小圆点表示加载完成"
+        },
+        "表格数据加载": {
+            "等待条件": "//div[contains(@class,'el-loading-mask') and contains(@style,'display: none')]",
+            "说明": "等待loading遮罩消失"
+        }
+    }
+}
