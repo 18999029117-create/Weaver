@@ -31,20 +31,34 @@ class BrowserManager:
     
     def connect(self) -> ChromiumPage:
         """
-        连接浏览器
+        连接浏览器（自动接管或启动）
         
         Returns:
             ChromiumPage 对象
-            
-        Raises:
-            ConnectionError: 无法连接到浏览器
         """
-        host, port = self.addr.split(':')
-        if not PortChecker.is_port_open(int(port), host):
-            raise ConnectionError(f"无法连接到 {self.addr}。请确保浏览器已启用调试模式。")
-        
-        self.page = ChromiumPage(addr_or_opts=self.addr)
-        return self.page
+        try:
+            from DrissionPage import ChromiumOptions
+            
+            host, port = self.addr.split(':')
+            if not PortChecker.is_port_open(int(port), host):
+                print(f"[BrowserManager] 端口 {port} 未开启，尝试自动启动浏览器...")
+                # 配置启动选项
+                co = ChromiumOptions()
+                co.set_local_port(int(port))
+                co.set_argument('--remote-debugging-port', port)
+                co.set_argument('--no-first-run')
+                # 尝试自动启动
+                self.page = ChromiumPage(addr_or_opts=co)
+                print(f"[BrowserManager] ✅ 浏览器启动成功")
+                return self.page
+            
+            # 端口已开启，直接接管
+            self.page = ChromiumPage(addr_or_opts=self.addr)
+            return self.page
+            
+        except Exception as e:
+            print(f"[BrowserManager] 连接/启动浏览器失败: {e}")
+            raise ConnectionError(f"无法连接或启动浏览器: {e}")
     
     def is_connected(self) -> bool:
         """检查是否已连接"""

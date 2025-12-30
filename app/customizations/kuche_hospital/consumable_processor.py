@@ -9,7 +9,7 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 
-from app.customizations.kuche_hospital.element_loader import ElementLoader
+from .element_loader import ElementLoader
 
 
 class ConsumableProcessor:
@@ -125,7 +125,7 @@ class ConsumableProcessor:
         
         # 查找价格列
         price_column = None
-        possible_price_cols = ['单价(元)', '单价（元）', '单价', '价格', '挂网价']
+        possible_price_cols = ['医院采购价', '单价(元)', '单价（元）', '单价', '价格']
         for col in possible_price_cols:
             if col in excel_data.columns:
                 price_column = col
@@ -162,6 +162,11 @@ class ConsumableProcessor:
         
         # 报告数据收集
         self._report_rows = []  # 每条记录: {状态, 医保码, 产品名称, 表格价格, 网页价格, 生产厂家, 数量}
+        
+        # 【新增】保存原始Excel数据和代码列名，用于生成基于原表的报告
+        self._original_excel_data = excel_data.copy()
+        self._code_column = code_column
+        self._code_status = {}  # {医保码: 状态} 用于标记每个代码的处理结果
         
         # 保存产品名称和生产厂家信息（从Excel读取）
         self._excel_product_info = {}
@@ -221,6 +226,7 @@ class ConsumableProcessor:
             if result_status == 'empty':
                 self._log(f"   ➡️ 查询无结果，继续下一个")
                 skipped_count += 1
+                self._code_status[code] = '查无信息'
                 continue
             elif result_status != 'data':
                 continue
@@ -240,6 +246,7 @@ class ConsumableProcessor:
                     '数量': count,
                     '备注': f'查询返回{row_count}条结果，可能价格/厂家/型号不同，需手动处理'
                 })
+                self._code_status[code] = f'多条结果({row_count}条)'
                 continue
             
             # 3.5 价格审核：对比网页挂网价和Excel单价
@@ -248,7 +255,7 @@ class ConsumableProcessor:
             if excel_price is not None:
                 web_price = self._get_web_price()
                 if web_price is not None:
-                    if abs(excel_price - web_price) > 0.01:  # 允许0.01的误差
+                    if excel_price != web_price:  # 完全相等才录入
                         self._log(f"   ⚠️ 价格不一致！Excel: {excel_price} vs 网页: {web_price}，跳过")
                         price_mismatch_count += 1
                         # 记录到报告
@@ -261,6 +268,7 @@ class ConsumableProcessor:
                             '生产厂家': product_info.get('生产厂家', ''),
                             '数量': count
                         })
+                        self._code_status[code] = '价格不一致'
                         continue
                     else:
                         self._log(f"   ✅ 价格一致: {excel_price}")
@@ -294,6 +302,7 @@ class ConsumableProcessor:
                 '生产厂家': product_info.get('生产厂家', ''),
                 '数量': count
             })
+            self._code_status[code] = '已完成'
         
         # 报告数据已收集，可通过 export_report() 导出
         report_count = len(self._report_rows)
@@ -322,7 +331,7 @@ class ConsumableProcessor:
     
     def export_report(self, filepath: str) -> bool:
         """
-        导出Excel报告到指定路径
+        导出Excel报告到指定路径（基于原表，带颜色标记）
         
         Args:
             filepath: 保存文件路径
@@ -330,11 +339,13 @@ class ConsumableProcessor:
         Returns:
             bool: 是否成功
         """
-        if not self.has_report_data():
-            self._log("⚠️ 无数据可导出")
+        if not hasattr(self, '_original_excel_data') or self._original_excel_data is None:
+            self._log("⚠️ 无原始数据可导出")
             return False
         
         try:
+            from copy import copy
+            
             wb = Workbook()
             ws = wb.active
             ws.title = "采购处理报告"
@@ -342,8 +353,9 @@ class ConsumableProcessor:
             # 定义样式
             header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
             header_font = Font(color="FFFFFF", bold=True)
-            success_fill = PatternFill(start_color="DAEEF3", end_color="DAEEF3", fill_type="solid")  # 淡蓝色
-            mismatch_fill = PatternFill(start_color="FCD5B4", end_color="FCD5B4", fill_type="solid")  # 橘黄色
+            success_fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")  # 淡绿色（已完成）
+            mismatch_fill = PatternFill(start_color="FCD5B4", end_color="FCD5B4", fill_type="solid")  # 橘黄色（价格不一致）
+            multi_fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")  # 淡黄色（多条结果）
             thin_border = Border(
                 left=Side(style='thin'),
                 right=Side(style='thin'),
@@ -351,44 +363,84 @@ class ConsumableProcessor:
                 bottom=Side(style='thin')
             )
             
+            df = self._original_excel_data
+            code_col = self._code_column
+            
+            # 获取原始列名
+            original_columns = list(df.columns)
+            # 在第一列插入"录入状态"列
+            all_columns = ['录入状态'] + original_columns
+            
             # 写表头
-            headers = ['状态', '医保码', '产品名称', '表格价格', '网页价格', '生产厂家', '数量']
-            for col, header in enumerate(headers, 1):
-                cell = ws.cell(row=1, column=col, value=header)
+            for col_idx, col_name in enumerate(all_columns, 1):
+                cell = ws.cell(row=1, column=col_idx, value=col_name)
                 cell.fill = header_fill
                 cell.font = header_font
                 cell.alignment = Alignment(horizontal='center')
                 cell.border = thin_border
             
             # 写数据行
-            for row_idx, row_data in enumerate(self._report_rows, 2):
-                for col_idx, header in enumerate(headers, 1):
-                    value = row_data.get(header, '')
+            for row_idx, (_, row) in enumerate(df.iterrows(), 2):
+                # 获取该行的医保码
+                code_value = str(row.get(code_col, '')).strip()
+                # 查找该代码的状态
+                status = self._code_status.get(code_value, '')
+                
+                # 第一列：录入状态
+                cell = ws.cell(row=row_idx, column=1, value=status)
+                cell.border = thin_border
+                cell.alignment = Alignment(horizontal='center')
+                
+                # 根据状态设置整行背景色
+                row_fill = None
+                if status == '已完成':
+                    row_fill = success_fill
+                elif status == '价格不一致':
+                    row_fill = mismatch_fill
+                elif '多条结果' in status:
+                    row_fill = multi_fill
+                elif status == '查无信息':
+                    row_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")  # 灰色
+                
+                if row_fill:
+                    cell.fill = row_fill
+                
+                # 原始数据列
+                for col_idx, col_name in enumerate(original_columns, 2):
+                    value = row.get(col_name, '')
+                    # 处理 NaN 值
+                    if pd.isna(value):
+                        value = ''
                     cell = ws.cell(row=row_idx, column=col_idx, value=value)
                     cell.border = thin_border
-                    
-                    # 根据状态设置背景色
-                    if row_data.get('状态') == '已完成':
-                        cell.fill = success_fill
-                    elif row_data.get('状态') == '价格不一致':
-                        cell.fill = mismatch_fill
+                    if row_fill:
+                        cell.fill = row_fill
             
-            # 调整列宽
-            ws.column_dimensions['A'].width = 12
-            ws.column_dimensions['B'].width = 20
-            ws.column_dimensions['C'].width = 30
-            ws.column_dimensions['D'].width = 12
-            ws.column_dimensions['E'].width = 12
-            ws.column_dimensions['F'].width = 25
-            ws.column_dimensions['G'].width = 10
+            # 自动调整列宽（粗略估算）
+            ws.column_dimensions['A'].width = 12  # 录入状态列
+            for i, col_name in enumerate(original_columns, 2):
+                col_letter = chr(64 + i) if i <= 26 else f"{chr(64 + i // 26)}{chr(64 + i % 26)}"
+                try:
+                    from openpyxl.utils import get_column_letter
+                    col_letter = get_column_letter(i)
+                    ws.column_dimensions[col_letter].width = min(max(len(str(col_name)) + 2, 10), 30)
+                except:
+                    pass
             
             # 保存文件
             wb.save(filepath)
+            
+            # 统计
+            completed = sum(1 for s in self._code_status.values() if s == '已完成')
+            total = len(df)
             self._log(f"📊 报告已保存: {filepath}")
+            self._log(f"📊 统计: 总行数 {total}，已录入 {completed}，其他状态 {len(self._code_status) - completed}")
             return True
             
         except Exception as e:
             self._log(f"⚠️ 导出报告失败: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def _wait_dialog_open(self, timeout: float = None) -> bool:
@@ -419,21 +471,21 @@ class ConsumableProcessor:
     
     def _get_web_price(self) -> float | None:
         """
-        从查询结果表格中提取挂网价
+        从查询结果表格中提取医院采购价
         
         Returns:
-            float: 挂网价，获取失败返回 None
+            float: 医院采购价，获取失败返回 None
         """
         try:
             target = self._get_target()
             
-            # 策略1：通过表头找到"挂网价"列的索引，然后获取第一行的对应单元格
+            # 策略1：通过表头找到"医院采购价"列的索引，然后获取第一行的对应单元格
             # Element UI 表格结构：表头在 thead，数据在 tbody
             
-            # 先找表头中包含"挂网价"的列
+            # 先找表头中包含"医院采购价"的列
             header_selectors = [
-                f'xpath:{self.DIALOG_XPATH}//thead//th[contains(.,\"挂网价\")]',
-                f'xpath:{self.DIALOG_XPATH}//div[contains(@class,\"el-table__header\")]//th[contains(.,\"挂网价\")]',
+                f'xpath:{self.DIALOG_XPATH}//thead//th[contains(.,\"医院采购价\")]',
+                f'xpath:{self.DIALOG_XPATH}//div[contains(@class,\"el-table__header\")]//th[contains(.,\"医院采购价\")]',
             ]
             
             header_cell = None
@@ -456,11 +508,11 @@ class ConsumableProcessor:
                         price_text = re.sub(r'[^\d.]', '', price_text)
                         if price_text:
                             price = float(price_text)
-                            self._log(f"   💰 网页挂网价: {price}")
+                            self._log(f"   💰 网页医院采购价: {price}")
                             return price
             
             # 策略2：直接搜索包含数字格式的单元格（兜底）
-            self._log("   ⚠️ 未能定位挂网价列")
+            self._log("   ⚠️ 未能定位医院采购价列")
             return None
             
         except Exception as e:

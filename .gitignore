@@ -9,6 +9,9 @@ __pycache__/
 .idea/
 
 # Project Specific
+dist/
+build/
+*.spec
 tests/
 *.xlsx
 *.xls

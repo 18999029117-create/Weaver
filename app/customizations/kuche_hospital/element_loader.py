@@ -24,10 +24,22 @@ class ElementLoader:
         Args:
             config_path: JSON 配置文件路径，默认为项目根目录的 element_selectors.json
         """
+        import sys
         if config_path is None:
-            # 默认路径：项目根目录
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-            config_path = os.path.join(project_root, 'element_selectors.json')
+            # 策略1: 优先检查当前工作目录（支持外部配置覆盖）
+            cwd_path = os.path.join(os.getcwd(), 'element_selectors.json')
+            
+            if os.path.exists(cwd_path):
+                config_path = cwd_path
+                print(f"[ElementLoader] 使用外部配置文件: {config_path}")
+            elif getattr(sys, 'frozen', False):
+                # 策略2: 打包环境 - 使用内部资源
+                config_path = os.path.join(sys._MEIPASS, 'element_selectors.json')
+                print(f"[ElementLoader] 使用内部配置文件: {config_path}")
+            else:
+                # 策略3: 开发环境 - 使用相对路径
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+                config_path = os.path.join(project_root, 'element_selectors.json')
         
         self.config_path = config_path
         self.config: Dict[str, Any] = {}
@@ -83,21 +95,11 @@ class ElementLoader:
         tab: Any, 
         category: str, 
         name: str,
-        timeout: float = 2.0,
+        timeout: float = 5.0,  # 增加默认超时
         in_iframe: bool = False
     ) -> Tuple[Optional[Any], str]:
         """
-        使用多种选择器依次尝试定位元素
-        
-        Args:
-            tab: DrissionPage 的 tab/frame 对象
-            category: 元素类别
-            name: 元素名称
-            timeout: 超时时间（秒）
-            in_iframe: 是否在 iframe 内查找
-            
-        Returns:
-            (元素对象, 成功使用的选择器) 或 (None, '')
+        使用多种选择器依次尝试定位元素（增强版：自动重试和 iframe 等待）
         """
         selectors = self.get_selectors(category, name)
         
@@ -106,17 +108,29 @@ class ElementLoader:
             return None, ''
         
         target = tab
+        return_selector = ''
         
-        # 如果需要在 iframe 内查找，先尝试切换
+        # 如果需要在 iframe 内查找，先尝试切换（带重试）
         if in_iframe:
-            try:
-                # 尝试获取第一个 iframe
-                iframe = tab.ele('tag:iframe', timeout=1)
-                if iframe:
-                    target = iframe
-                    print(f"[ElementLoader] 已切换到 iframe")
-            except:
-                pass
+            import time
+            end_time = time.time() + timeout
+            found_iframe = False
+            
+            while time.time() < end_time:
+                try:
+                    # 尝试获取并切换到 iframe
+                    iframe = tab.ele('tag:iframe', timeout=1)
+                    if iframe:
+                        target = iframe
+                        found_iframe = True
+                        # print(f"[ElementLoader] 已切换到 iframe")
+                        break
+                except:
+                    pass
+                time.sleep(0.5)
+            
+            if not found_iframe:
+                print(f"[ElementLoader] ⚠️ 等待 iframe 超时")
         
         # 依次尝试每个选择器
         for selector_config in selectors:
